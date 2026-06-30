@@ -541,9 +541,9 @@ with tabs[7]:
 # ════════════════════════════════════════════════════════════
 with tabs[8]:
     st.subheader("🟡 G2 Reviews")
-    st.caption("Scrapes reviews directly from your company's G2 page using a real browser — bypasses G2's 403 block.")
+    st.caption("Scrapes reviews from your company's G2 page. Logs in automatically to bypass G2's block.")
 
-    st.markdown('<div class="tip-box">Paste your G2 product URL — e.g. <code>https://www.g2.com/products/notion/reviews</code>. No login needed, reviews are public. A browser window will open — don\'t close it.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="tip-box">🔐 G2 requires you to be logged in to view reviews. A browser window will open — log in with your G2 account (or a dummy account) on the first run. Your session is saved so you won\'t need to log in again.</div>', unsafe_allow_html=True)
 
     g2_url   = st.text_input("G2 product URL", placeholder="https://www.g2.com/products/your-product/reviews")
     g2_pages = st.slider("Pages to scrape (up to ~10 reviews per page)", 1, 20, 5)
@@ -554,26 +554,23 @@ with tabs[8]:
         elif "g2.com" not in g2_url:
             st.error("That doesn't look like a G2 URL — make sure it starts with https://www.g2.com/products/...")
         else:
-            with st.spinner(f"Opening browser and scraping up to {g2_pages} pages…"):
+            with st.spinner(f"Opening browser… log in to G2 if prompted, then scraping will start automatically."):
                 try:
                     import sys, os; sys.path.insert(0, os.path.dirname(__file__))
-                    from social_scrapers import scrape_g2_reviews
-                    results = scrape_g2_reviews(
+                    from social_scrapers import scrape_g2_reviews_logged_in
+                    results = scrape_g2_reviews_logged_in(
                         g2_url=g2_url.strip(),
                         max_pages=g2_pages,
                         headless=headless_mode,
                     )
                     if not results:
-                        st.warning("No reviews found — G2 may have changed their layout. Try with 'Hide browser windows' turned OFF so you can see what's happening.")
+                        st.warning("No reviews found — try turning OFF 'Hide browser windows' in the sidebar so you can see what's happening.")
                     else:
                         st.success(f"Collected {len(results)} reviews!")
-
-                        # Summary stats
                         ratings = [r["rating"] for r in results if r.get("rating")]
                         mc1, mc2 = st.columns(2)
                         mc1.metric("Total reviews scraped", len(results))
                         mc2.metric("Most common rating", max(set(ratings), key=ratings.count) if ratings else "—")
-
                         st.dataframe(results, use_container_width=True)
                         dl_buttons(results, "g2_reviews")
 

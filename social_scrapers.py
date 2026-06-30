@@ -627,3 +627,113 @@ def scrape_g2_reviews(
 
     print(f"[G2] Collected {len(results)} reviews.")
     return results
+
+
+def scrape_g2_reviews_logged_in(
+    g2_url: str,
+    max_pages: int = 5,
+    session_file: str = "g2_session.json",
+    headless: bool = False,
+) -> list[dict]:
+    """
+    Scrape G2 reviews while logged in — bypasses 403 errors.
+    Browser opens on first run so you can log in. Session is saved automatically.
+    """
+    results = []
+    session_path = Path(session_file)
+
+    if "/reviews" not in g2_url:
+        g2_url = g2_url.rstrip("/") + "/reviews"
+
+    with sync_playwright() as p:
+        browser = _new_browser(p, headless=headless, slow_mo=120)
+        ctx = _stealth_context(browser, str(session_path) if session_path.exists() else None)
+        page = ctx.new_page()
+
+        # ── Login check ───────────────────────────────────────────────────
+        print("[G2] Checking login status…")
+        page.goto("https://www.g2.com", wait_until="domcontentloaded", timeout=30000)
+        _human_delay(2, 4)
+
+        # If not logged in, send to login page
+        login_btn = page.query_selector("a[href*='/session/new']") or \
+                    page.query_selector("a[data-track*='sign-in']")
+        if login_btn:
+            print("[G2] Not logged in — please log in in the browser window that opened.")
+            print("     The session will be saved automatically when you're done.")
+            page.goto("https://www.g2.com/session/new", wait_until="domcontentloaded")
+            # Wait until logged in (user menu appears)
+            page.wait_for_selector("div[data-dropdown='user-menu'], a[href*='/profile']", timeout=120000)
+            ctx.storage_state(path=str(session_path))
+            print(f"[G2] Session saved → {session_path}")
+
+        # ── Scrape reviews ────────────────────────────────────────────────
+        for pg in range(1, max_pages + 1):
+            url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
+            print(f"[G2] Page {pg}/{max_pages}: {url}")
+            page.goto(url, wait_until="domcontentloaded", timeout=40000)
+            _human_delay(2, 5)
+            _scroll_down(page, times=4, pause=1.5)
+
+            cards = page.query_selector_all("div[id^='review-']")
+            if not cards:
+                cards = page.query_selector_all("div.paper.paper--white.paper--box")
+            if not cards:
+                print(f"[G2] No reviews found on page {pg}, stopping.")
+                break
+
+            for card in cards:
+                try:
+                    def _t(sel):
+                        el = card.query_selector(sel)
+                        return el.inner_text().strip() if el else ""
+
+                    rating_el = card.query_selector("span.fw-semibold")
+                    rating = rating_el.inner_text().strip() if rating_el else ""
+
+                    title_el = card.query_selector("h3") or card.query_selector("a.pjax")
+                    title = title_el.inner_text().strip() if title_el else ""
+
+                    name_el = card.query_selector("span.fw-semibold.link-color-blue") or \
+                              card.query_selector("a[href*='/users/']")
+                    name = name_el.inner_text().strip() if name_el else "Anonymous"
+
+                    role_el = card.query_selector("div.mt-4th") or \
+                              card.query_selector("span[class*='text-small']")
+                    role = role_el.inner_text().strip() if role_el else ""
+
+                    pros_el  = card.query_selector("div[data-test='pros'] p") or \
+                               card.query_selector("div.review-answer p")
+                    cons_els = card.query_selector_all("div[data-test='cons'] p")
+                    all_ans  = card.query_selector_all(".review-answer p")
+
+                    pros = pros_el.inner_text().strip() if pros_el else ""
+                    cons = cons_els[0].inner_text().strip() if cons_els else ""
+                    if not pros and all_ans:
+                        pros = all_ans[0].inner_text().strip() if len(all_ans) > 0 else ""
+                        cons = all_ans[1].inner_text().strip() if len(all_ans) > 1 else ""
+
+                    date_el = card.query_selector("time")
+                    date = date_el.get_attribute("datetime") if date_el else ""
+
+                    if title or pros:
+                        results.append({
+                            "reviewer": name, "role": role, "rating": rating,
+                            "title": title, "pros": pros, "cons": cons, "date": date,
+                        })
+                except Exception:
+                    pass
+
+            _human_delay(2, 4)
+
+            next_btn = page.query_selector("a[data-next-page]") or \
+                       page.query_selector("li.next a") or \
+                       page.query_selector("a[aria-label='Next page']")
+            if not next_btn and pg < max_pages:
+                break
+
+        ctx.storage_state(path=str(session_path))
+        browser.close()
+
+    print(f"[G2] Collected {len(results)} reviews.")
+    return results
