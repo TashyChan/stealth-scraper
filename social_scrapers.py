@@ -737,3 +737,141 @@ def scrape_g2_reviews_logged_in(
 
     print(f"[G2] Collected {len(results)} reviews.")
     return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# G2 — REAL CHROME PROFILE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def scrape_g2_with_real_chrome(
+    g2_url: str,
+    max_pages: int = 5,
+) -> list[dict]:
+    """
+    Scrape G2 using your actual installed Chrome browser with your real login
+    cookies — G2 can't tell this apart from you browsing normally.
+    Chrome must be fully closed before running this.
+    """
+    import subprocess, platform, shutil
+
+    results = []
+
+    if "/reviews" not in g2_url:
+        g2_url = g2_url.rstrip("/") + "/reviews"
+
+    # ── Find Chrome user data directory ──────────────────────────────────────
+    system = platform.system()
+    if system == "Windows":
+        chrome_data = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+    elif system == "Darwin":
+        chrome_data = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+    else:
+        chrome_data = Path.home() / ".config" / "google-chrome"
+
+    if not chrome_data.exists():
+        raise FileNotFoundError(
+            f"Chrome profile not found at {chrome_data}. "
+            "Make sure Google Chrome is installed."
+        )
+
+    print(f"[G2] Using Chrome profile at: {chrome_data}")
+    print("[G2] ⚠️  Make sure Chrome is fully closed before scraping!")
+
+    with sync_playwright() as p:
+        # Launch using your REAL Chrome profile
+        ctx = p.chromium.launch_persistent_context(
+            user_data_dir=str(chrome_data),
+            channel="chrome",           # Use real Chrome, not Chromium
+            headless=False,             # Must be visible when using real profile
+            slow_mo=150,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-extensions-except=",
+            ],
+            ignore_default_args=["--enable-automation"],
+        )
+
+        page = ctx.new_page()
+
+        # Remove automation flags
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = { runtime: {} };
+        """)
+
+        for pg in range(1, max_pages + 1):
+            url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
+            print(f"[G2] Page {pg}/{max_pages}: {url}")
+
+            page.goto(url, wait_until="domcontentloaded", timeout=40000)
+            _human_delay(3, 6)
+            _scroll_down(page, times=4, pause=2.0)
+
+            # Check if blocked
+            if "temporarily restricted" in page.content().lower() or \
+               "access denied" in page.content().lower():
+                print("[G2] ⚠️  Still getting blocked — make sure you're logged in to G2 in Chrome and Chrome was fully closed before running.")
+                break
+
+            cards = page.query_selector_all("div[id^='review-']")
+            if not cards:
+                cards = page.query_selector_all("div.paper.paper--white.paper--box")
+            if not cards:
+                print(f"[G2] No reviews found on page {pg}, stopping.")
+                break
+
+            for card in cards:
+                try:
+                    def _t(sel):
+                        el = card.query_selector(sel)
+                        return el.inner_text().strip() if el else ""
+
+                    rating_el = card.query_selector("span.fw-semibold")
+                    rating = rating_el.inner_text().strip() if rating_el else ""
+
+                    title_el = card.query_selector("h3") or card.query_selector("a.pjax")
+                    title = title_el.inner_text().strip() if title_el else ""
+
+                    name_el = card.query_selector("span.fw-semibold.link-color-blue") or \
+                              card.query_selector("a[href*='/users/']")
+                    name = name_el.inner_text().strip() if name_el else "Anonymous"
+
+                    role_el = card.query_selector("div.mt-4th") or \
+                              card.query_selector("span[class*='text-small']")
+                    role = role_el.inner_text().strip() if role_el else ""
+
+                    pros_el  = card.query_selector("div[data-test='pros'] p") or \
+                               card.query_selector("div.review-answer p")
+                    cons_els = card.query_selector_all("div[data-test='cons'] p")
+                    all_ans  = card.query_selector_all(".review-answer p")
+
+                    pros = pros_el.inner_text().strip() if pros_el else ""
+                    cons = cons_els[0].inner_text().strip() if cons_els else ""
+                    if not pros and all_ans:
+                        pros = all_ans[0].inner_text().strip() if len(all_ans) > 0 else ""
+                        cons = all_ans[1].inner_text().strip() if len(all_ans) > 1 else ""
+
+                    date_el = card.query_selector("time")
+                    date = date_el.get_attribute("datetime") if date_el else ""
+
+                    if title or pros:
+                        results.append({
+                            "reviewer": name, "role": role, "rating": rating,
+                            "title": title, "pros": pros, "cons": cons, "date": date,
+                        })
+                except Exception:
+                    pass
+
+            _human_delay(2, 5)
+
+            next_btn = page.query_selector("a[data-next-page]") or \
+                       page.query_selector("li.next a") or \
+                       page.query_selector("a[aria-label='Next page']")
+            if not next_btn and pg < max_pages:
+                break
+
+        ctx.close()
+
+    print(f"[G2] Collected {len(results)} reviews.")
+    return results
