@@ -805,10 +805,18 @@ def scrape_g2_with_real_chrome(
                 print("[G2] ⚠️  Still getting blocked — make sure you're logged in to G2 in Chrome and Chrome was fully closed before running.")
                 break
 
-            cards = page.query_selector_all("div[id^='review-']")
+            # Try multiple card selectors — G2 updates their layout often
+            cards = (
+                page.query_selector_all("div[id^='review-']") or
+                page.query_selector_all("div.paper.paper--white.paper--box") or
+                page.query_selector_all("[itemprop='review']") or
+                page.query_selector_all("div.review-card") or
+                page.query_selector_all("div[class*='review-card']")
+            )
             if not cards:
-                cards = page.query_selector_all("div.paper.paper--white.paper--box")
-            if not cards:
+                # Last resort: dump full page text into one result
+                body = page.inner_text("body")
+                print(f"[G2] Could not find review cards. Page text preview: {body[:300]}")
                 print(f"[G2] No reviews found on page {pg}, stopping.")
                 break
 
@@ -818,35 +826,43 @@ def scrape_g2_with_real_chrome(
                         el = card.query_selector(sel)
                         return el.inner_text().strip() if el else ""
 
-                    rating_el = card.query_selector("span.fw-semibold")
-                    rating = rating_el.inner_text().strip() if rating_el else ""
+                    # Reviewer name
+                    name = (
+                        _t("span.fw-semibold.link-color-blue") or
+                        _t("a[href*='/users/']") or
+                        _t("[itemprop='author'] span") or
+                        _t(".m-0 span") or
+                        "Anonymous"
+                    )
 
-                    title_el = card.query_selector("h3") or card.query_selector("a.pjax")
-                    title = title_el.inner_text().strip() if title_el else ""
+                    # Role
+                    role = _t("div.mt-4th") or _t(".text-small.color-mid") or ""
 
-                    name_el = card.query_selector("span.fw-semibold.link-color-blue") or \
-                              card.query_selector("a[href*='/users/']")
-                    name = name_el.inner_text().strip() if name_el else "Anonymous"
+                    # Rating — try data attribute first, then text
+                    rating_el = card.query_selector("[data-rating]")
+                    if rating_el:
+                        rating = rating_el.get_attribute("data-rating") or rating_el.inner_text().strip()
+                    else:
+                        rating = _t("span.fw-semibold") or _t(".stars-container span") or ""
 
-                    role_el = card.query_selector("div.mt-4th") or \
-                              card.query_selector("span[class*='text-small']")
-                    role = role_el.inner_text().strip() if role_el else ""
+                    # Title
+                    title = _t("h3") or _t(".review-title") or _t("a.pjax") or ""
 
-                    pros_el  = card.query_selector("div[data-test='pros'] p") or \
-                               card.query_selector("div.review-answer p")
-                    cons_els = card.query_selector_all("div[data-test='cons'] p")
-                    all_ans  = card.query_selector_all(".review-answer p")
+                    # Pros and cons — try specific selectors then fall back to all paragraphs
+                    pros = _t("div[data-test='pros'] p") or _t(".pros p") or ""
+                    cons = _t("div[data-test='cons'] p") or _t(".cons p") or ""
+                    if not pros or not cons:
+                        all_ans = card.query_selector_all(".review-answer p, [itemprop='reviewBody'] p, div.formatted-text p")
+                        if all_ans and not pros:
+                            pros = all_ans[0].inner_text().strip() if len(all_ans) > 0 else ""
+                        if all_ans and not cons:
+                            cons = all_ans[1].inner_text().strip() if len(all_ans) > 1 else ""
 
-                    pros = pros_el.inner_text().strip() if pros_el else ""
-                    cons = cons_els[0].inner_text().strip() if cons_els else ""
-                    if not pros and all_ans:
-                        pros = all_ans[0].inner_text().strip() if len(all_ans) > 0 else ""
-                        cons = all_ans[1].inner_text().strip() if len(all_ans) > 1 else ""
-
+                    # Date
                     date_el = card.query_selector("time")
-                    date = date_el.get_attribute("datetime") if date_el else ""
+                    date = (date_el.get_attribute("datetime") or date_el.inner_text().strip()) if date_el else ""
 
-                    if title or pros:
+                    if name or title or pros:
                         results.append({
                             "reviewer": name, "role": role, "rating": rating,
                             "title": title, "pros": pros, "cons": cons, "date": date,
@@ -856,9 +872,13 @@ def scrape_g2_with_real_chrome(
 
             _human_delay(2, 5)
 
-            next_btn = page.query_selector("a[data-next-page]") or \
-                       page.query_selector("li.next a") or \
-                       page.query_selector("a[aria-label='Next page']")
+            next_btn = (
+                page.query_selector("a[data-next-page]") or
+                page.query_selector("li.next a") or
+                page.query_selector("a[aria-label='Next page']") or
+                page.query_selector(".pagination-next a") or
+                page.query_selector("a[rel='next']")
+            )
             if not next_btn and pg < max_pages:
                 break
 
