@@ -159,10 +159,25 @@ with tabs[0]:
     want_links=c2.checkbox("All links",value=True)
     want_text=c3.checkbox("Visible text",value=False)
 
+    # Blocked platforms that need their own tab
+    BLOCKED = {
+        "g2.com": ("🟡 G2 Reviews", "the G2 Reviews tab"),
+        "linkedin.com": ("💼 LinkedIn", "the LinkedIn tab"),
+        "twitter.com": ("🐦 Twitter / X", "the Twitter / X tab"),
+        "x.com": ("🐦 Twitter / X", "the Twitter / X tab"),
+        "amazon.com": ("📦 Amazon Reviews", "the Amazon Reviews tab"),
+        "youtube.com": ("▶️ YouTube", "the YouTube tab"),
+    }
+
     if st.button("▶  Scan Page"):
         if not url.strip(): st.error("Enter a URL first.")
         else:
-            with st.spinner("Scanning…"):
+            domain = urlparse(url).netloc.lower().replace("www.","")
+            blocked = next(((name, tab) for pattern, (name, tab) in BLOCKED.items() if pattern in domain), None)
+            if blocked:
+                st.warning(f"⚠️ {blocked[0]} blocks the basic scraper — please use **{blocked[1]}** instead! It uses a real browser to get around their protection.")
+            else:
+              with st.spinner("Scanning…"):
                 try:
                     sc = make_scraper(); res = {}
                     if want_meta:  res["metadata"] = sc.extract_metadata(url)
