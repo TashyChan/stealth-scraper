@@ -153,21 +153,26 @@ with tabs[0]:
     st.subheader("🔍 Quick Scan")
     st.caption("Paste any URL to grab its title, description, links and text.")
     url = st.text_input("Website URL", placeholder="https://example.com", key="quick_url")
-    if url.strip(): platform = show_platform_badge(url)
+    BLOCKED = {
+        "g2.com": ("🟡 G2 Reviews", "G2 Reviews"),
+        "linkedin.com": ("💼 LinkedIn", "LinkedIn"),
+        "twitter.com": ("🐦 Twitter / X", "Twitter / X"),
+        "x.com": ("🐦 Twitter / X", "Twitter / X"),
+        "amazon.com": ("📦 Amazon Reviews", "Amazon Reviews"),
+        "youtube.com": ("▶️ YouTube", "YouTube"),
+    }
+
+    if url.strip():
+        platform = show_platform_badge(url)
+        domain = urlparse(url).netloc.lower().replace("www.","")
+        blocked = next(((name, tab) for pattern, (name, tab) in BLOCKED.items() if pattern in domain), None)
+        if blocked:
+            st.warning(f"⚠️ **{blocked[0]} can't be scraped here.** Click the **{blocked[1]} tab** at the top of the page instead — it uses a real browser to bypass their block.")
+
     c1,c2,c3 = st.columns(3)
     want_meta=c1.checkbox("Page metadata",value=True)
     want_links=c2.checkbox("All links",value=True)
     want_text=c3.checkbox("Visible text",value=False)
-
-    # Blocked platforms that need their own tab
-    BLOCKED = {
-        "g2.com": ("🟡 G2 Reviews", "the G2 Reviews tab"),
-        "linkedin.com": ("💼 LinkedIn", "the LinkedIn tab"),
-        "twitter.com": ("🐦 Twitter / X", "the Twitter / X tab"),
-        "x.com": ("🐦 Twitter / X", "the Twitter / X tab"),
-        "amazon.com": ("📦 Amazon Reviews", "the Amazon Reviews tab"),
-        "youtube.com": ("▶️ YouTube", "the YouTube tab"),
-    }
 
     if st.button("▶  Scan Page"):
         if not url.strip(): st.error("Enter a URL first.")
@@ -175,7 +180,7 @@ with tabs[0]:
             domain = urlparse(url).netloc.lower().replace("www.","")
             blocked = next(((name, tab) for pattern, (name, tab) in BLOCKED.items() if pattern in domain), None)
             if blocked:
-                st.warning(f"⚠️ {blocked[0]} blocks the basic scraper — please use **{blocked[1]}** instead! It uses a real browser to get around their protection.")
+                st.warning(f"⚠️ **{blocked[0]} can't be scraped here.** Click the **{blocked[1]} tab** at the top of the page instead!")
             else:
               with st.spinner("Scanning…"):
                 try:
