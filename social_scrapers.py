@@ -746,48 +746,39 @@ def scrape_g2_reviews_logged_in(
 def scrape_g2_with_real_chrome(
     g2_url: str,
     max_pages: int = 5,
+    profile_dir: str = "g2_chrome_profile",
 ) -> list[dict]:
     """
-    Scrape G2 using your actual installed Chrome browser with your real login
-    cookies — G2 can't tell this apart from you browsing normally.
-    Chrome must be fully closed before running this.
+    Scrape G2 using a dedicated Chrome profile stored in the scraper folder.
+    On first run a Chrome window opens — log in to G2 there.
+    Session is saved so you never need to log in again.
+    Your normal Chrome stays open the whole time!
     """
-    import subprocess, platform, shutil
+    import platform, shutil
 
     results = []
 
     if "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
-    # ── Find Chrome user data directory ──────────────────────────────────────
-    system = platform.system()
-    if system == "Windows":
-        chrome_data = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
-    elif system == "Darwin":
-        chrome_data = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-    else:
-        chrome_data = Path.home() / ".config" / "google-chrome"
+    # Store a dedicated Chrome profile next to the script
+    profile_path = Path(__file__).parent / profile_dir
+    profile_path.mkdir(exist_ok=True)
+    first_run = not (profile_path / "Default" / "Cookies").exists()
 
-    if not chrome_data.exists():
-        raise FileNotFoundError(
-            f"Chrome profile not found at {chrome_data}. "
-            "Make sure Google Chrome is installed."
-        )
-
-    print(f"[G2] Using Chrome profile at: {chrome_data}")
-    print("[G2] ⚠️  Make sure Chrome is fully closed before scraping!")
+    print(f"[G2] Using dedicated G2 Chrome profile at: {profile_path}")
+    if first_run:
+        print("[G2] First run — a Chrome window will open. Log in to G2, then close it.")
 
     with sync_playwright() as p:
-        # Launch using your REAL Chrome profile
         ctx = p.chromium.launch_persistent_context(
-            user_data_dir=str(chrome_data),
-            channel="chrome",           # Use real Chrome, not Chromium
-            headless=False,             # Must be visible when using real profile
+            user_data_dir=str(profile_path),
+            channel="chrome",
+            headless=False,
             slow_mo=150,
             args=[
                 "--no-sandbox",
                 "--disable-blink-features=AutomationControlled",
-                "--disable-extensions-except=",
             ],
             ignore_default_args=["--enable-automation"],
         )
