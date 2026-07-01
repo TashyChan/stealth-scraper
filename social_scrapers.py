@@ -921,7 +921,7 @@ def scrape_g2_undetected(
         from selenium.webdriver.support import expected_conditions as EC
         print("[G2-UC] Installed successfully ✓")
 
-    if "/reviews" not in g2_url:
+    if g2_url and "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
     # Determine which Chrome profile to use
@@ -1019,9 +1019,9 @@ def scrape_g2_undetected(
         # ── Scrape pages ─────────────────────────────────────────────────────
         # Use the URL the user actually navigated to
         actual_url = driver.current_url.split("?")[0].split("#")[0]
-        if not g2_url:
+        if not g2_url or g2_url == "/reviews":
             g2_url = actual_url
-        if "/reviews" not in g2_url:
+        if g2_url and "/reviews" not in g2_url:
             g2_url = g2_url.rstrip("/") + "/reviews"
 
         blocked = False
