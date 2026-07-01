@@ -895,15 +895,14 @@ def scrape_g2_undetected(
     max_pages: int = 5,
     profile_dir: str = "g2_uc_profile",
     proxy: str = None,
+    use_real_profile: bool = False,
 ) -> list[dict]:
     """
     Scrape G2 reviews using undetected-chromedriver.
     Patches Chrome at a binary level — much harder for G2 to detect than Playwright.
 
-    First run: a Chrome window opens → log in to G2 → the scraper continues automatically.
-    Your session is saved in g2_uc_profile/ so you never need to log in again.
-
-    Install once:  pip install undetected-chromedriver selenium
+    use_real_profile=True: uses your actual Chrome profile (full history/cookies/extensions).
+    Chrome MUST be fully closed before running in this mode.
     """
     import json as _json
     try:
@@ -925,13 +924,23 @@ def scrape_g2_undetected(
     if "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
-    profile_path = Path(__file__).parent / profile_dir
-    profile_path.mkdir(exist_ok=True)
-    first_run = not (profile_path / "Default" / "Cookies").exists()
-
-    print(f"[G2-UC] Profile: {profile_path}")
-    if first_run:
-        print("[G2-UC] First run — log in to G2 when the browser opens, then wait.")
+    # Determine which Chrome profile to use
+    if use_real_profile:
+        import os
+        real_profile = Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
+        if not real_profile.exists():
+            real_profile = Path(os.environ.get("APPDATA", "")) / ".." / "Local" / "Google" / "Chrome" / "User Data"
+        profile_path = real_profile
+        first_run = False
+        print(f"[G2-UC] Using REAL Chrome profile: {profile_path}")
+        print("[G2-UC] ⚠️  Make sure ALL Chrome windows are closed or this will fail!")
+    else:
+        profile_path = Path(__file__).parent / profile_dir
+        profile_path.mkdir(exist_ok=True)
+        first_run = not (profile_path / "Default" / "Cookies").exists()
+        print(f"[G2-UC] Using dedicated profile: {profile_path}")
+        if first_run:
+            print("[G2-UC] First run — log in to G2 when the browser opens, then wait.")
 
     options = uc.ChromeOptions()
     options.add_argument(f"--user-data-dir={profile_path}")

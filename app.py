@@ -580,15 +580,22 @@ with tabs[8]:
     g2_url   = st.text_input("G2 product URL", placeholder="https://www.g2.com/products/your-product/reviews")
     g2_pages = st.slider("Pages to scrape (up to ~10 reviews per page)", 1, 20, 5)
 
-    with st.expander("🌐 Proxy / IP settings (use this if G2 keeps blocking you)"):
+    with st.expander("🛠️ Advanced: fix G2 blocking"):
         st.markdown("""
-Your current IP is temporarily banned by G2. **Quickest fixes:**
-- **Phone hotspot:** turn on your phone's mobile hotspot, connect your PC to it, then scrape
-- **Free VPN:** install [ProtonVPN](https://protonvpn.com/download) (free tier), connect, then scrape
-- **Paste a proxy below:** get a free one from [sslproxies.org](https://www.sslproxies.org/) or [spys.one](https://spys.one/en/)
+**Why is G2 blocking?** It's detecting the browser as a bot via fingerprint — not just IP.
 
-Proxy format: `http://host:port` or `socks5://host:port`
+**Best fix — use your real Chrome profile:**
+G2 can't distinguish your real Chrome (with all your history, cookies & extensions) from a normal visit.
+> ⚠️ You must **close ALL Chrome windows** before clicking Scrape, then Chrome will reopen automatically.
         """)
+        g2_real_profile = st.checkbox(
+            "✅ Use my real Chrome profile (close ALL Chrome windows first!)",
+            value=False,
+            key="g2_real_profile"
+        )
+        st.markdown("---")
+        st.markdown("**Alternative: use a proxy**  
+Format: `http://host:port` or `socks5://host:port`")
         g2_proxy = st.text_input("Proxy (optional)", placeholder="http://123.45.67.89:8080", label_visibility="visible")
 
     if st.button("▶  Scrape G2 Reviews", key="g2_go"):
@@ -607,6 +614,7 @@ Proxy format: `http://host:port` or `socks5://host:port`
                         g2_url=g2_url.strip(),
                         max_pages=g2_pages,
                         proxy=proxy_val,
+                        use_real_profile=g2_real_profile,
                     )
                     if not results:
                         st.warning(
