@@ -1043,17 +1043,41 @@ def scrape_g2_undetected(
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(1.5)
 
-            # Check if blocked
+            # Check page state
             try:
                 body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
             except Exception:
                 print("[G2-UC] Browser closed unexpectedly — stopping.")
                 blocked = True
                 break
+
+            # Sign-in wall — pause and wait for user to log in
+            if any(x in body_text for x in ("sign in", "log in", "create an account", "join g2")):
+                current_url = driver.current_url
+                if "session" in current_url or "sign_in" in current_url or "login" in current_url or                    ("g2.com" in current_url and "products" not in current_url):
+                    print("[G2-UC] ⚠️  G2 is asking you to sign in.")
+                    print("[G2-UC] ➜  Please log in to G2 in the Chrome window.")
+                    print("[G2-UC] ➜  The scraper will continue automatically once you're logged in.")
+                    for _ in range(60):  # wait up to 5 minutes
+                        time.sleep(5)
+                        try:
+                            new_url = driver.current_url
+                            new_body = driver.find_element(By.TAG_NAME, "body").text.lower()
+                            if "g2.com/products" in new_url and "sign in" not in new_body:
+                                print("[G2-UC] ✓ Logged in — continuing scrape.")
+                                # Re-navigate to the page we were trying to reach
+                                driver.get(f"{g2_url}?page={pg}")
+                                time.sleep(random.uniform(4, 7))
+                                body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+                                break
+                        except Exception:
+                            pass
+                    else:
+                        print("[G2-UC] Login timeout — stopping.")
+                        break
+
             if "temporarily restricted" in body_text or "access denied" in body_text:
-                print("[G2-UC] ⚠️  G2 IP block still active.")
-                print("[G2-UC] ➜  Close the app, wait 30–60 minutes, then try again.")
-                print("[G2-UC] ➜  Using a VPN or different network will also fix this immediately.")
+                print("[G2-UC] ⚠️  G2 access restricted — stopping.")
                 blocked = True
                 break
 
