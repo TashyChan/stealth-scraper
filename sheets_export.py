@@ -129,3 +129,137 @@ def export_linkedin_company(spreadsheet, data: dict) -> dict:
         written["LinkedIn - Posts"] = n
 
     return written
+
+
+# ── Content section export ────────────────────────────────────────────────────
+
+_TYPE_LABELS = {
+    "h1": "Heading 1", "h2": "Heading 2", "h3": "Heading 3",
+    "h4": "Heading 4", "h5": "Heading 5",
+    "p":  "Paragraph", "li": "List item",
+    "blockquote": "Quote", "figcaption": "Caption",
+}
+
+# Light background colors per section type for Google Sheets
+_TYPE_COLORS = {
+    "Heading 1":  {"red": 0.827, "green": 0.851, "blue": 0.965},  # soft indigo
+    "Heading 2":  {"red": 0.851, "green": 0.918, "blue": 0.980},  # soft blue
+    "Heading 3":  {"red": 0.878, "green": 0.949, "blue": 0.878},  # soft green
+    "Heading 4":  {"red": 0.949, "green": 0.949, "blue": 0.878},  # soft yellow
+    "List item":  {"red": 0.961, "green": 0.949, "blue": 0.914},  # soft amber
+    "Quote":      {"red": 0.949, "green": 0.914, "blue": 0.961},  # soft purple
+}
+
+
+def export_content_sections(spreadsheet, tab_name: str, soup) -> int:
+    """
+    Parse a BeautifulSoup object into ordered content sections and export
+    to a Google Sheet tab formatted for annotation.
+
+    Columns: # | Type | Content | Your Comments
+
+    Returns the number of sections written.
+    """
+    # Strip noise
+    for tag in soup(["script", "style", "noscript", "nav", "footer",
+                     "header", "aside", "form", "iframe"]):
+        tag.decompose()
+
+    # Walk the DOM in order — only meaningful content tags
+    tags = soup.find_all(["h1","h2","h3","h4","h5","p","li","blockquote","figcaption"])
+
+    sections = []
+    seen = set()
+    for tag in tags:
+        text = tag.get_text(separator=" ", strip=True)
+        # Skip blanks, very short noise, and duplicates
+        if not text or len(text) < 8 or text in seen:
+            continue
+        seen.add(text)
+        label = _TYPE_LABELS.get(tag.name, tag.name.title())
+        sections.append({"num": len(sections) + 1, "type": label, "content": text})
+
+    if not sections:
+        return 0
+
+    ws = _get_or_create_ws(spreadsheet, tab_name)
+
+    # Write data
+    header = ["#", "Type", "Content", "Your Comments"]
+    rows = [header] + [
+        [str(s["num"]), s["type"], s["content"], ""]
+        for s in sections
+    ]
+    ws.update(rows, value_input_option="USER_ENTERED")
+
+    # ── Formatting ────────────────────────────────────────────────────────────
+    try:
+        sheet_id = ws._properties["sheetId"]
+        requests = []
+
+        # Freeze header row
+        requests.append({
+            "updateSheetProperties": {
+                "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+                "fields": "gridProperties.frozenRowCount",
+            }
+        })
+
+        # Header row: dark bg + white bold text
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": {"red": 0.2, "green": 0.3, "blue": 0.5},
+                    "textFormat": {"bold": True, "foregroundColor": {"red":1,"green":1,"blue":1}, "fontSize": 10},
+                    "horizontalAlignment": "LEFT",
+                }},
+                "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+            }
+        })
+
+        # Color rows by section type (columns A + B only, content stays white)
+        for i, s in enumerate(sections):
+            color = _TYPE_COLORS.get(s["type"])
+            if color:
+                row_idx = i + 1  # offset by header
+                requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
+                            "startColumnIndex": 0, "endColumnIndex": 2,
+                        },
+                        "cell": {"userEnteredFormat": {"backgroundColor": color}},
+                        "fields": "userEnteredFormat.backgroundColor",
+                    }
+                })
+
+        # Column widths: narrow #, medium Type, wide Content, wide Comments
+        widths = [40, 100, 450, 350]
+        for col_idx, px in enumerate(widths):
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                              "startIndex": col_idx, "endIndex": col_idx + 1},
+                    "properties": {"pixelSize": px},
+                    "fields": "pixelSize",
+                }
+            })
+
+        # Wrap text in Content + Comments columns
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": sheet_id, "startRowIndex": 1,
+                          "startColumnIndex": 2, "endColumnIndex": 4},
+                "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
+                "fields": "userEnteredFormat.wrapStrategy",
+            }
+        })
+
+        spreadsheet.batch_update({"requests": requests})
+
+    except Exception:
+        pass  # Formatting is best-effort — data is already written
+
+    return len(sections)

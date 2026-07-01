@@ -261,6 +261,31 @@ with tabs[0]:
                 except PermissionError as e: st.error(f"🚫 {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
+    # ── Content Sections → Sheets ─────────────────────────────────────────────
+    if _sheets_ready():
+        st.markdown("---")
+        st.markdown("### 📝 Content sections → Sheets")
+        st.caption("Break any page into sections (headings, paragraphs, list items) and send each one as a row to Google Sheets — with an empty **Your Comments** column so you can annotate every part of the content.")
+        cs_url  = st.text_input("Page URL", key="cs_url", placeholder="https://example.com/blog-post")
+        cs_tab  = st.text_input("Sheet tab name", key="cs_tab", value="Content Review")
+        if st.button("📝 Export sections to Sheets", key="cs_go"):
+            if not cs_url.strip():
+                st.error("Enter a URL.")
+            else:
+                with st.spinner("Fetching page and parsing sections…"):
+                    try:
+                        import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+                        from sheets_export import connect, export_content_sections
+                        _, soup = make_scraper().fetch(cs_url.strip())
+                        sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                        n  = export_content_sections(sp, cs_tab.strip() or "Content Review", soup)
+                        if n:
+                            st.success(f"✅ **{n} sections** exported to **'{cs_tab}'** tab — open your Sheet to start annotating!")
+                        else:
+                            st.warning("No content sections found. The page may require JavaScript to render — try a static page.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
 # ════════════════════════════════════════════════════════════
 # TAB 2 — EXTRACT DATA
 # ════════════════════════════════════════════════════════════
