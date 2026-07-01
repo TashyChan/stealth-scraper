@@ -942,6 +942,19 @@ def scrape_g2_undetected(
         if first_run:
             print("[G2-UC] First run — log in to G2 when the browser opens, then wait.")
 
+    # Find Chrome executable explicitly (avoid picking up Edge)
+    import os as _os
+    chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        _os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+    ]
+    chrome_exe = next((p for p in chrome_paths if _os.path.exists(p)), None)
+    if chrome_exe:
+        print(f"[G2-UC] Using Chrome at: {chrome_exe}")
+    else:
+        print("[G2-UC] ⚠️  Could not find Chrome — make sure Google Chrome is installed.")
+
     options = uc.ChromeOptions()
     options.add_argument(f"--user-data-dir={profile_path}")
     options.add_argument("--profile-directory=Default")
@@ -979,66 +992,42 @@ def scrape_g2_undetected(
     results = []
 
     try:
-        if use_real_profile:
-            # Real profile: skip Google warm-up, go straight to reviews
-            print("[G2-UC] Real profile mode — navigating directly to reviews page…")
-        else:
-            # Fresh profile: warm up via Google to look like organic traffic
-            product_name = g2_url.split("/products/")[-1].split("/")[0].replace("-", " ")
-            search_query = f"{product_name} g2 reviews"
-            google_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
+        # ── Manual navigation mode: user browses to the page, scraper extracts ──
+        print("[G2-UC] Browser is open.")
+        print("[G2-UC] ══════════════════════════════════════════════")
+        print(f"[G2-UC] Please navigate to your G2 reviews page in the Chrome window.")
+        print(f"[G2-UC] Target URL: {g2_url}")
+        print("[G2-UC] Once you can see reviews on screen, come back here.")
+        print("[G2-UC] The scraper will start automatically once you are on the right page.")
+        print("[G2-UC] ══════════════════════════════════════════════")
 
-            print(f"[G2-UC] Warm-up step 1/3: searching Google for '{search_query}'…")
-            driver.get(google_url)
-            time.sleep(random.uniform(4, 7))
-
-            for _ in range(2):
-                driver.execute_script("window.scrollBy(0, window.innerHeight * 0.5);")
-                time.sleep(random.uniform(1.0, 2.0))
-
+        # Wait until the user is on the right G2 reviews page
+        for _ in range(120):  # wait up to 10 minutes
+            time.sleep(5)
             try:
-                links = driver.find_elements(By.CSS_SELECTOR, "a[href*='g2.com']")
-                g2_links = [l for l in links if "g2.com/products" in (l.get_attribute("href") or "")]
-                if g2_links:
-                    print("[G2-UC] Warm-up step 2/3: clicking G2 link from Google…")
-                    g2_links[0].click()
-                    time.sleep(random.uniform(4, 7))
-                else:
-                    raise Exception("no link")
+                current = driver.current_url
+                if "g2.com/products" in current and "review" in current.lower():
+                    print(f"[G2-UC] ✓ Detected reviews page: {current}")
+                    print("[G2-UC] Starting data extraction…")
+                    time.sleep(2)
+                    break
             except Exception:
-                print("[G2-UC] Warm-up step 2/3: navigating to g2.com homepage…")
-                driver.get("https://www.g2.com")
-                time.sleep(random.uniform(4, 7))
-
-            print("[G2-UC] Warm-up step 3/3: scrolling page…")
-            for _ in range(3):
-                driver.execute_script("window.scrollBy(0, window.innerHeight * 0.6);")
-                time.sleep(random.uniform(1.0, 2.0))
-
-            # Login check for fresh profile first run
-            if first_run:
-                cookies = {c["name"] for c in driver.get_cookies()}
-                if not ("remember_token" in cookies or "_g2_session" in cookies):
-                    print("[G2-UC] Please log in to G2 in the browser window.")
-                    print("[G2-UC] The script will continue automatically once logged in.")
-                    for _ in range(36):
-                        time.sleep(5)
-                        cookies = {c["name"] for c in driver.get_cookies()}
-                        if "remember_token" in cookies or "_g2_session" in cookies:
-                            print("[G2-UC] Login detected ✓")
-                            break
-                    else:
-                        print("[G2-UC] Login timeout — proceeding anyway.")
+                pass
+        else:
+            print("[G2-UC] Timed out waiting for navigation. Attempting anyway…")
 
         # ── Scrape pages ─────────────────────────────────────────────────────
         blocked = False
         for pg in range(1, max_pages + 1):
-            url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
-            print(f"[G2-UC] Navigating to page {pg}/{max_pages}…")
-
-            driver.get(url)
-            print(f"[G2-UC] Page loaded — waiting for content…")
-            time.sleep(random.uniform(4, 7))
+            if pg > 1:
+                # For pages after the first, navigate automatically
+                url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
+                print(f"[G2-UC] Navigating to page {pg}/{max_pages}…")
+                driver.get(url)
+                time.sleep(random.uniform(4, 7))
+            else:
+                print(f"[G2-UC] Extracting page 1 from current view…")
+                time.sleep(2)
 
             # Scroll to load lazy content
             for _ in range(5):

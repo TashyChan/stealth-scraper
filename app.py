@@ -565,14 +565,12 @@ with tabs[8]:
 
     st.markdown(
         '<div class="tip-box">'
-        '🛡️ <b>New approach — undetected-chromedriver</b><br>'
-        'G2 was blocking the old Playwright method at the fingerprint level. '
-        'This new method patches Chrome at a lower level and is much harder to detect.<br><br>'
+        '🛡️ <b>How it works</b><br>'
+        'A Chrome window will open. <b>You navigate to the G2 reviews page yourself</b> — '
+        'the scraper detects when you\'re there and automatically extracts all the reviews.<br><br>'
+        'Because <i>you</i> do the navigation (not the bot), G2 can\'t block it.<br><br>'
         '📦 <b>One-time setup (if you haven\'t already):</b> open PowerShell and run:<br>'
-        '<code>pip install undetected-chromedriver selenium</code><br><br>'
-        '🔐 On the <b>first run</b> a Chrome window will open — log in to G2, then the scraper continues automatically. '
-        'Your session is saved in <code>g2_uc_profile/</code> so you never need to log in again.<br><br>'
-        '⏱️ The scraper waits 30–90 s between pages to mimic real human browsing — this is intentional!'
+        '<code>pip install undetected-chromedriver selenium</code>'
         '</div>',
         unsafe_allow_html=True
     )
@@ -606,7 +604,7 @@ G2 can't distinguish your real Chrome (with all your history, cookies & extensio
         else:
             proxy_val = g2_proxy.strip() if g2_proxy.strip() else None
             spinner_msg = "Opening Chrome via proxy… " if proxy_val else "Opening Chrome… "
-            with st.spinner(spinner_msg + "log in to G2 if prompted, then scraping starts automatically. Long waits are intentional!"):
+            with st.spinner(spinner_msg + "navigate to your G2 reviews page in the browser, then extraction starts automatically."):
                 try:
                     import sys, os; sys.path.insert(0, os.path.dirname(__file__))
                     from social_scrapers import scrape_g2_undetected
