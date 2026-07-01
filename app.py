@@ -134,13 +134,16 @@ with st.sidebar:
         with open(_url_path) as _f:
             st.session_state["sheets_url"] = _f.read().strip()
 
+    # ── inline helper (function defined later, can't call it here) ────────────
+    _ready = bool(st.session_state.get("sheets_creds") and st.session_state.get("sheets_url"))
+
     # ── Show status ───────────────────────────────────────────────────────────
-    if _sheets_ready() if "sheets_creds" in st.session_state else False:
+    if _ready:
         st.success("✅ Sheets connected (saved)")
         if st.button("🔄 Update credentials", key="sheets_update"):
             st.session_state["_sheets_editing"] = True
 
-    if not _sheets_ready() or st.session_state.get("_sheets_editing"):
+    if not _ready or st.session_state.get("_sheets_editing"):
         sheets_json = st.file_uploader(
             "Service account JSON", type=["json"], key="gsheets_json",
             help="Google Cloud Console → Service Accounts → Keys → Add Key → JSON")
