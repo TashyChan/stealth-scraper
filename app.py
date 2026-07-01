@@ -565,11 +565,11 @@ with tabs[8]:
     st.markdown(
         '<div class="tip-box">'
         '<b>How to use:</b><br>'
-        '1. <b>Close all Chrome windows</b> first (right-click Chrome in taskbar → Close all windows)<br>'
-        '2. Set pages below, click <b>▶ Scrape G2 Reviews</b> — Chrome reopens automatically<br>'
-        '3. In Chrome, go to your G2 reviews page (paste the URL, hit Enter)<br>'
-        '4. Once reviews are visible, scraping starts automatically<br>'
-        '5. When each page is done, the terminal will tell you to click Next — you click it manually'
+        '1. Set pages below and click <b>▶ Scrape G2 Reviews</b> — a new Chrome window opens<br>'
+        '2. In that window, go to your G2 reviews page and wait for reviews to load<br>'
+        '3. Scraping starts automatically — when a page is done the terminal says to click Next<br>'
+        '4. Click Next yourself in Chrome, scraper picks up the new page automatically<br><br>'
+        '✅ Your normal Chrome windows stay open the whole time'
         '</div>',
         unsafe_allow_html=True
     )

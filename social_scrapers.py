@@ -924,15 +924,35 @@ def scrape_g2_undetected(
     if g2_url and "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
-    # Always use the real Chrome profile — it has real history/cookies so G2 can't detect it
-    import os
+    # Copy real Chrome profile so Chrome can stay open while we scrape
+    import os, shutil
     real_profile = Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
     if not real_profile.exists():
         real_profile = Path(os.environ.get("APPDATA", "")).parent / "Local" / "Google" / "Chrome" / "User Data"
-    profile_path = real_profile
+
+    copy_path = Path(__file__).parent / "g2_chrome_copy"
+    print(f"[G2-UC] Copying your Chrome profile (cookies/history) — this takes a few seconds…")
+    if copy_path.exists():
+        shutil.rmtree(copy_path, ignore_errors=True)
+    # Only copy the Default profile folder (not all of User Data — too large)
+    src_default = real_profile / "Default"
+    dst_default = copy_path / "Default"
+    # Copy only the key files that carry session/fingerprint info
+    dst_default.mkdir(parents=True, exist_ok=True)
+    for item in ["Cookies", "Login Data", "Preferences", "History", "Web Data",
+                 "Extension Cookies", "Local Storage", "Session Storage"]:
+        s = src_default / item
+        d = dst_default / item
+        try:
+            if s.is_dir():
+                shutil.copytree(str(s), str(d))
+            elif s.exists():
+                shutil.copy2(str(s), str(d))
+        except Exception:
+            pass
+    profile_path = copy_path
     first_run = False
-    print(f"[G2-UC] Using real Chrome profile: {profile_path}")
-    print("[G2-UC] ⚠️  All Chrome windows must be closed — opening now…")
+    print(f"[G2-UC] Profile copied ✓ — Chrome can stay open.")
 
     # Find Chrome executable explicitly (avoid picking up Edge)
     import os as _os
