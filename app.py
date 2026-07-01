@@ -580,7 +580,16 @@ with tabs[8]:
     g2_url   = st.text_input("G2 product URL", placeholder="https://www.g2.com/products/your-product/reviews")
     g2_pages = st.slider("Pages to scrape (up to ~10 reviews per page)", 1, 20, 5)
 
-    st.info("💡 Tip: if you still get blocked after switching to this method, wait 30–60 minutes for G2's IP cooldown to expire, then try again.")
+    with st.expander("🌐 Proxy / IP settings (use this if G2 keeps blocking you)"):
+        st.markdown("""
+Your current IP is temporarily banned by G2. **Quickest fixes:**
+- **Phone hotspot:** turn on your phone's mobile hotspot, connect your PC to it, then scrape
+- **Free VPN:** install [ProtonVPN](https://protonvpn.com/download) (free tier), connect, then scrape
+- **Paste a proxy below:** get a free one from [sslproxies.org](https://www.sslproxies.org/) or [spys.one](https://spys.one/en/)
+
+Proxy format: `http://host:port` or `socks5://host:port`
+        """)
+        g2_proxy = st.text_input("Proxy (optional)", placeholder="http://123.45.67.89:8080", label_visibility="visible")
 
     if st.button("▶  Scrape G2 Reviews", key="g2_go"):
         if not g2_url.strip():
@@ -588,13 +597,16 @@ with tabs[8]:
         elif "g2.com" not in g2_url:
             st.error("That doesn't look like a G2 URL — make sure it starts with https://www.g2.com/products/...")
         else:
-            with st.spinner("Opening Chrome… log in to G2 if prompted, then scraping will start automatically. This takes a few minutes — the long waits are intentional!"):
+            proxy_val = g2_proxy.strip() if g2_proxy.strip() else None
+            spinner_msg = "Opening Chrome via proxy… " if proxy_val else "Opening Chrome… "
+            with st.spinner(spinner_msg + "log in to G2 if prompted, then scraping starts automatically. Long waits are intentional!"):
                 try:
                     import sys, os; sys.path.insert(0, os.path.dirname(__file__))
                     from social_scrapers import scrape_g2_undetected
                     results = scrape_g2_undetected(
                         g2_url=g2_url.strip(),
                         max_pages=g2_pages,
+                        proxy=proxy_val,
                     )
                     if not results:
                         st.warning(

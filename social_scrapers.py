@@ -894,6 +894,7 @@ def scrape_g2_undetected(
     g2_url: str,
     max_pages: int = 5,
     profile_dir: str = "g2_uc_profile",
+    proxy: str = None,
 ) -> list[dict]:
     """
     Scrape G2 reviews using undetected-chromedriver.
@@ -940,6 +941,9 @@ def scrape_g2_undetected(
     # Extra stealth: realistic window size and language
     options.add_argument("--window-size=1366,768")
     options.add_argument("--lang=en-US")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
+        print(f"[G2-UC] Using proxy: {proxy}")
 
     # Auto-detect installed Chrome version so uc downloads the right ChromeDriver
     chrome_version = None
