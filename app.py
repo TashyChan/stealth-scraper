@@ -261,31 +261,6 @@ with tabs[0]:
                 except PermissionError as e: st.error(f"🚫 {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
-    # ── Content Sections → Sheets ─────────────────────────────────────────────
-    if _sheets_ready():
-        st.markdown("---")
-        st.markdown("### 📝 Content sections → Sheets")
-        st.caption("Break any page into sections (headings, paragraphs, list items) and send each one as a row to Google Sheets — with an empty **Your Comments** column so you can annotate every part of the content.")
-        cs_url  = st.text_input("Page URL", key="cs_url", placeholder="https://example.com/blog-post")
-        cs_tab  = st.text_input("Sheet tab name", key="cs_tab", value="Content Review")
-        if st.button("📝 Export sections to Sheets", key="cs_go"):
-            if not cs_url.strip():
-                st.error("Enter a URL.")
-            else:
-                with st.spinner("Fetching page and parsing sections…"):
-                    try:
-                        import sys, os; sys.path.insert(0, os.path.dirname(__file__))
-                        from sheets_export import connect, export_content_sections
-                        _, soup = make_scraper().fetch(cs_url.strip())
-                        sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
-                        n  = export_content_sections(sp, cs_tab.strip() or "Content Review", soup)
-                        if n:
-                            st.success(f"✅ **{n} sections** exported to **'{cs_tab}'** tab — open your Sheet to start annotating!")
-                        else:
-                            st.warning("No content sections found. The page may require JavaScript to render — try a static page.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
 # ════════════════════════════════════════════════════════════
 # TAB 2 — EXTRACT DATA
 # ════════════════════════════════════════════════════════════
@@ -332,8 +307,82 @@ with tabs[1]:
                             except Exception as e: st.error(f"Sheets export failed: {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
-# ════════════════════════════════════════════════════════════
-# TAB 3 — CRAWL
+    # ── Content Sections → Sheets ─────────────────────────────────────────────
+    if _sheets_ready():
+        st.markdown("---")
+        st.markdown("### 📝 Content sections → Sheets")
+        st.caption("Paste a site URL, find all its pages, tick the ones you want, and export each page's content as its own Sheet tab — with a **Your Comments** column for annotations.")
+
+        cs_site = st.text_input("Site URL to crawl for pages", key="cs_site",
+                                placeholder="https://example.com")
+
+        if st.button("🔍 Find pages", key="cs_find"):
+            if not cs_site.strip():
+                st.error("Enter a URL.")
+            else:
+                with st.spinner("Scanning for pages…"):
+                    try:
+                        links = make_scraper().extract_links(cs_site.strip(), same_domain_only=True)
+                        # Add the root URL itself
+                        all_pages = [cs_site.strip()] + [l for l in links if l != cs_site.strip()]
+                        st.session_state["cs_pages"] = all_pages
+                        st.session_state["cs_selected"] = {u: True for u in all_pages}
+                    except Exception as e:
+                        st.error(f"Could not fetch pages: {e}")
+
+        if st.session_state.get("cs_pages"):
+            pages = st.session_state["cs_pages"]
+            st.markdown(f"**{len(pages)} pages found** — tick the ones you want to export:")
+
+            # Select / deselect all
+            ca, cb = st.columns(2)
+            if ca.button("✅ Select all", key="cs_all"):
+                st.session_state["cs_selected"] = {u: True for u in pages}; st.rerun()
+            if cb.button("⬜ Deselect all", key="cs_none"):
+                st.session_state["cs_selected"] = {u: False for u in pages}; st.rerun()
+
+            for u in pages:
+                checked = st.session_state["cs_selected"].get(u, True)
+                st.session_state["cs_selected"][u] = st.checkbox(u, value=checked, key=f"cs_chk_{u}")
+
+            chosen = [u for u, v in st.session_state["cs_selected"].items() if v]
+            st.caption(f"{len(chosen)} of {len(pages)} pages selected")
+
+            if chosen and st.button(f"📝 Export {len(chosen)} page(s) to Sheets", key="cs_export"):
+                import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+                from sheets_export import connect, export_content_sections
+                from urllib.parse import urlparse as _up
+                try:
+                    sp  = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                    sc  = make_scraper()
+                    bar = st.progress(0)
+                    results = []
+                    for i, u in enumerate(chosen):
+                        bar.progress((i + 1) / len(chosen), text=f"Scraping {i+1}/{len(chosen)}: {u[:60]}")
+                        try:
+                            _, soup = sc.fetch(u)
+                            # Tab name = page title or URL slug, max 90 chars
+                            title_tag = soup.find("title")
+                            tab_name  = title_tag.get_text(strip=True) if title_tag else ""
+                            if not tab_name:
+                                path = _up(u).path.strip("/").replace("/", " › ")
+                                tab_name = path or _up(u).netloc
+                            tab_name = tab_name[:90]
+                            n = export_content_sections(sp, tab_name, soup)
+                            results.append((u, tab_name, n, None))
+                        except Exception as e:
+                            results.append((u, "—", 0, str(e)))
+                    bar.progress(1.0, text="Done!")
+                    ok  = [(u, t, n) for u, t, n, e in results if e is None]
+                    err = [(u, e)    for u, t, n, e in results if e]
+                    if ok:
+                        lines = "\n".join(f"• **{t}** — {n} sections" for _, t, n in ok)
+                        st.success(f"✅ Exported {len(ok)} page(s) to your Sheet:\n{lines}")
+                    if err:
+                        for u, e in err:
+                            st.warning(f"⚠️ Failed: `{u}` — {e}")
+                except Exception as e:
+                    st.error(f"Sheets connection failed: {e}")
 # ════════════════════════════════════════════════════════════
 with tabs[2]:
     st.subheader("🕸️ Crawl Site")
