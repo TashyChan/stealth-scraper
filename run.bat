@@ -23,8 +23,9 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Launch the app
-python -m streamlit run app.py --server.headless false
+:: Launch the app (suppress auto-open, then open Chrome manually)
+start "" "chrome.exe" "http://localhost:8501"
+python -m streamlit run app.py --server.headless false --browser.serverAddress localhost --server.port 8501
 
 if %errorlevel% neq 0 (
     echo.
