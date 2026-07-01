@@ -941,7 +941,28 @@ def scrape_g2_undetected(
     options.add_argument("--window-size=1366,768")
     options.add_argument("--lang=en-US")
 
-    driver = uc.Chrome(options=options, headless=False)
+    # Auto-detect installed Chrome version so uc downloads the right ChromeDriver
+    chrome_version = None
+    try:
+        import subprocess as _sp, re as _re
+        for cmd in [
+            r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version',
+            r'reg query "HKLM\SOFTWARE\Google\Chrome\BLBeacon" /v version',
+            r'reg query "HKLM\SOFTWARE\Wow6432Node\Google\Chrome\BLBeacon" /v version',
+        ]:
+            try:
+                out = _sp.check_output(cmd, shell=True, stderr=_sp.DEVNULL).decode()
+                m = _re.search(r"(\d+)\.\d+\.\d+\.\d+", out)
+                if m:
+                    chrome_version = int(m.group(1))
+                    print(f"[G2-UC] Detected Chrome version: {chrome_version}")
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    driver = uc.Chrome(options=options, headless=False, version_main=chrome_version)
     results = []
 
     try:
