@@ -49,8 +49,8 @@ class StealthSession:
     """
 
     IMPERSONATE_PROFILES = [
-        "chrome120", "chrome119", "chrome118",
-        "chrome116", "chrome110", "edge101",
+        "chrome131", "chrome124", "chrome123",
+        "chrome120", "chrome116", "chrome110",
     ]
 
     def __init__(
