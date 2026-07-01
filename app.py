@@ -118,18 +118,48 @@ with st.sidebar:
         help="Free at console.cloud.google.com → YouTube Data API v3")
     st.markdown("---")
     st.markdown("### 📊 Google Sheets")
-    sheets_json = st.file_uploader(
-        "Service account JSON", type=["json"], key="gsheets_json",
-        help="Google Cloud Console → Service Accounts → Keys → Add Key → JSON")
-    sheets_url = st.text_input(
-        "Spreadsheet URL", key="gsheets_url",
-        placeholder="https://docs.google.com/spreadsheets/d/...")
-    if sheets_json and sheets_url:
-        st.session_state["sheets_creds"] = sheets_json.getvalue()
-        st.session_state["sheets_url"]   = sheets_url.strip()
-        st.success("✅ Sheets ready")
-    elif sheets_json or sheets_url:
-        st.info("Enter both the JSON file and Sheet URL to enable export.")
+
+    # ── Persistent storage paths ──────────────────────────────────────────────
+    import os as _os
+    _cfg_dir  = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".scraper_config")
+    _creds_path = _os.path.join(_cfg_dir, "sheets_creds.json")
+    _url_path   = _os.path.join(_cfg_dir, "sheets_url.txt")
+    _os.makedirs(_cfg_dir, exist_ok=True)
+
+    # ── Auto-load saved credentials on startup ────────────────────────────────
+    if "sheets_creds" not in st.session_state and _os.path.exists(_creds_path):
+        with open(_creds_path, "rb") as _f:
+            st.session_state["sheets_creds"] = _f.read()
+    if "sheets_url" not in st.session_state and _os.path.exists(_url_path):
+        with open(_url_path) as _f:
+            st.session_state["sheets_url"] = _f.read().strip()
+
+    # ── Show status ───────────────────────────────────────────────────────────
+    if _sheets_ready() if "sheets_creds" in st.session_state else False:
+        st.success("✅ Sheets connected (saved)")
+        if st.button("🔄 Update credentials", key="sheets_update"):
+            st.session_state["_sheets_editing"] = True
+
+    if not _sheets_ready() or st.session_state.get("_sheets_editing"):
+        sheets_json = st.file_uploader(
+            "Service account JSON", type=["json"], key="gsheets_json",
+            help="Google Cloud Console → Service Accounts → Keys → Add Key → JSON")
+        sheets_url = st.text_input(
+            "Spreadsheet URL", key="gsheets_url",
+            value=st.session_state.get("sheets_url", ""),
+            placeholder="https://docs.google.com/spreadsheets/d/...")
+        if sheets_json and sheets_url.strip():
+            creds_bytes = sheets_json.getvalue()
+            st.session_state["sheets_creds"] = creds_bytes
+            st.session_state["sheets_url"]   = sheets_url.strip()
+            # Save to disk so it persists across restarts
+            with open(_creds_path, "wb") as _f: _f.write(creds_bytes)
+            with open(_url_path,   "w")  as _f: _f.write(sheets_url.strip())
+            st.session_state.pop("_sheets_editing", None)
+            st.success("✅ Sheets connected and saved — won't need to re-upload!")
+            st.rerun()
+        elif sheets_json or sheets_url.strip():
+            st.info("Enter both the JSON file and Sheet URL to connect.")
     st.markdown("---")
     st.markdown("⚠️ Always check a site's Terms of Service before scraping.")
 
