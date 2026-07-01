@@ -1027,14 +1027,10 @@ def scrape_g2_undetected(
         blocked = False
         cards_on_page = 0
         for pg in range(1, max_pages + 1):
-            if pg > 1:
-                url = f"{g2_url}?page={pg}"
-                print(f"[G2-UC] Navigating to page {pg}/{max_pages}: {url}")
-                driver.get(url)
-                time.sleep(random.uniform(4, 7))
-            else:
+            if pg == 1:
                 print(f"[G2-UC] Extracting page 1 from current view…")
                 time.sleep(2)
+            # Pages 2+ are handled by clicking Next at the end of each page
 
             # Scroll to load lazy content
             for _ in range(5):
@@ -1158,9 +1154,52 @@ def scrape_g2_undetected(
                 print(f"[G2-UC] No reviews found on page {pg}, stopping.")
                 break
 
-            # Short delay between pages
+            # Navigate to next page by clicking the Next button (more human than driver.get)
             if pg < max_pages:
-                time.sleep(random.uniform(3, 6))
+                try:
+                    next_btn = None
+                    for sel in [
+                        "a[data-test='next-page']",
+                        "a[aria-label='Next page']",
+                        "li.next a",
+                        "a[rel='next']",
+                        ".pagination li:last-child a",
+                        "nav a[href*='page=']",
+                    ]:
+                        try:
+                            btn = driver.find_element(By.CSS_SELECTOR, sel)
+                            if btn.is_displayed():
+                                next_btn = btn
+                                break
+                        except Exception:
+                            pass
+
+                    # Also try finding by text content
+                    if not next_btn:
+                        for a in driver.find_elements(By.TAG_NAME, "a"):
+                            try:
+                                if a.text.strip().lower() in ("next", "next page", ">", "›") and a.is_displayed():
+                                    next_btn = a
+                                    break
+                            except Exception:
+                                pass
+
+                    if next_btn:
+                        print(f"[G2-UC] Clicking Next button for page {pg + 1}…")
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", next_btn)
+                        time.sleep(random.uniform(1, 2))
+                        next_btn.click()
+                        time.sleep(random.uniform(4, 7))
+                    else:
+                        # Fallback: scroll to bottom then navigate
+                        print(f"[G2-UC] No Next button found — navigating to page {pg + 1} by URL…")
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(random.uniform(2, 4))
+                        driver.get(f"{g2_url}?page={pg + 1}")
+                        time.sleep(random.uniform(4, 7))
+                except Exception as e:
+                    print(f"[G2-UC] Pagination error: {e}")
+                    break
 
     finally:
         try:
