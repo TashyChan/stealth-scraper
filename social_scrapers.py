@@ -924,23 +924,15 @@ def scrape_g2_undetected(
     if g2_url and "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
-    # Determine which Chrome profile to use
-    if use_real_profile:
-        import os
-        real_profile = Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
-        if not real_profile.exists():
-            real_profile = Path(os.environ.get("APPDATA", "")) / ".." / "Local" / "Google" / "Chrome" / "User Data"
-        profile_path = real_profile
-        first_run = False
-        print(f"[G2-UC] Using REAL Chrome profile: {profile_path}")
-        print("[G2-UC] ⚠️  Make sure ALL Chrome windows are closed or this will fail!")
-    else:
-        profile_path = Path(__file__).parent / profile_dir
-        profile_path.mkdir(exist_ok=True)
-        first_run = not (profile_path / "Default" / "Cookies").exists()
-        print(f"[G2-UC] Using dedicated profile: {profile_path}")
-        if first_run:
-            print("[G2-UC] First run — log in to G2 when the browser opens, then wait.")
+    # Always use the real Chrome profile — it has real history/cookies so G2 can't detect it
+    import os
+    real_profile = Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
+    if not real_profile.exists():
+        real_profile = Path(os.environ.get("APPDATA", "")).parent / "Local" / "Google" / "Chrome" / "User Data"
+    profile_path = real_profile
+    first_run = False
+    print(f"[G2-UC] Using real Chrome profile: {profile_path}")
+    print("[G2-UC] ⚠️  All Chrome windows must be closed — opening now…")
 
     # Find Chrome executable explicitly (avoid picking up Edge)
     import os as _os
