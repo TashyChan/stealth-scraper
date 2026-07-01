@@ -38,7 +38,7 @@ echo [2/4] Installing required packages...
 echo (This may take a few minutes)
 echo.
 python -m pip install --upgrade pip --quiet
-python -m pip install streamlit curl-cffi beautifulsoup4 fake-useragent lxml playwright google-api-python-client --quiet
+python -m pip install streamlit curl-cffi beautifulsoup4 fake-useragent lxml playwright google-api-python-client gspread google-auth --quiet
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: Failed to install packages.

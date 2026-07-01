@@ -117,6 +117,20 @@ with st.sidebar:
     yt_api_key = st.text_input("YouTube Data API key", type="password",
         help="Free at console.cloud.google.com → YouTube Data API v3")
     st.markdown("---")
+    st.markdown("### 📊 Google Sheets")
+    sheets_json = st.file_uploader(
+        "Service account JSON", type=["json"], key="gsheets_json",
+        help="Google Cloud Console → Service Accounts → Keys → Add Key → JSON")
+    sheets_url = st.text_input(
+        "Spreadsheet URL", key="gsheets_url",
+        placeholder="https://docs.google.com/spreadsheets/d/...")
+    if sheets_json and sheets_url:
+        st.session_state["sheets_creds"] = sheets_json.getvalue()
+        st.session_state["sheets_url"]   = sheets_url.strip()
+        st.success("✅ Sheets ready")
+    elif sheets_json or sheets_url:
+        st.info("Enter both the JSON file and Sheet URL to enable export.")
+    st.markdown("---")
     st.markdown("⚠️ Always check a site's Terms of Service before scraping.")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -137,10 +151,24 @@ def to_csv_bytes(data):
     w.writeheader(); w.writerows(data)
     return buf.getvalue().encode()
 
-def dl_buttons(data, stem):
-    c1,c2 = st.columns(2)
-    c1.download_button("⬇️ Download CSV",  to_csv_bytes(data), f"{stem}.csv",  "text/csv")
-    c2.download_button("⬇️ Download JSON", json.dumps(data,indent=2,ensure_ascii=False), f"{stem}.json","application/json")
+def _sheets_ready():
+    return bool(st.session_state.get("sheets_creds") and st.session_state.get("sheets_url"))
+
+def dl_buttons(data, stem, sheet_tab=None):
+    show_sheets = _sheets_ready() and sheet_tab is not None
+    cols = st.columns(3) if show_sheets else st.columns(2)
+    cols[0].download_button("⬇️ CSV",  to_csv_bytes(data), f"{stem}.csv", "text/csv", key=f"csv_{stem}")
+    cols[1].download_button("⬇️ JSON", json.dumps(data,indent=2,ensure_ascii=False), f"{stem}.json","application/json", key=f"json_{stem}")
+    if show_sheets:
+        if cols[2].button("📊 → Sheets", key=f"sh_{stem}"):
+            try:
+                import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+                from sheets_export import connect, export_list
+                sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                n  = export_list(sp, sheet_tab, data if isinstance(data, list) else [data])
+                st.success(f"✅ {n} rows written to **'{sheet_tab}'** tab in your Sheet.")
+            except Exception as e:
+                st.error(f"Sheets export failed: {e}")
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
 tabs = st.tabs(["🔍 Quick Scan", "🎯 Extract Data", "🕸️ Crawl Site", "📋 Bulk Scrape",
@@ -221,7 +249,7 @@ with tabs[0]:
                                 except Exception as e: br.append({"url":u,"error":str(e)})
                             pb.progress(1.0,text="Done!")
                             st.dataframe(br,width="stretch")
-                            dl_buttons(br,"links_scraped")
+                            dl_buttons(br,"links_scraped", sheet_tab="Quick Scan - Links")
                         st.markdown('</div>',unsafe_allow_html=True)
 
                     if want_text and "text" in res:
@@ -229,7 +257,7 @@ with tabs[0]:
                         st.text_area("",res["text"][:3000],height=200)
                         st.markdown('</div>',unsafe_allow_html=True)
 
-                    dl_buttons([res] if not isinstance(res.get("links",[]),list) else [{"scan":str(res)}],"scan")
+                    dl_buttons([res] if not isinstance(res.get("links",[]),list) else [{"scan":str(res)}],"scan", sheet_tab="Quick Scan")
                 except PermissionError as e: st.error(f"🚫 {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
@@ -266,7 +294,17 @@ with tabs[1]:
                     for k,v in result.items():
                         if k=="url": continue
                         st.markdown(f"**{k}**"); st.code(str(v) if v else "(not found)",language=None)
-                    st.download_button("⬇️ JSON",json.dumps(result,indent=2),"extracted.json","application/json")
+                    ecols = st.columns(2) if not _sheets_ready() else st.columns(3)
+                    ecols[0].download_button("⬇️ JSON",json.dumps(result,indent=2),"extracted.json","application/json", key="json_extracted")
+                    if _sheets_ready():
+                        if ecols[1].button("📊 → Sheets", key="sh_extracted"):
+                            try:
+                                import sys,os; sys.path.insert(0,os.path.dirname(__file__))
+                                from sheets_export import connect, export_single
+                                sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                                export_single(sp, "Extract Data", result)
+                                st.success("✅ Exported to **'Extract Data'** tab in your Sheet.")
+                            except Exception as e: st.error(f"Sheets export failed: {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
 # ════════════════════════════════════════════════════════════
@@ -303,7 +341,7 @@ with tabs[2]:
                 except Exception as e: log.append(f"  ⚠ {e}")
             pb.progress(1.0,text="Done!")
             st.success(f"Visited {len(results)} pages.")
-            st.dataframe(results,width="stretch"); dl_buttons(results,"crawl")
+            st.dataframe(results,width="stretch"); dl_buttons(results,"crawl", sheet_tab="Crawl Site")
 
 # ════════════════════════════════════════════════════════════
 # TAB 4 — BULK SCRAPE
@@ -339,7 +377,7 @@ with tabs[3]:
                 except Exception as e: results.append({"url":u,"error":str(e),**{k:None for k in sels}})
             pb.progress(1.0,text="Done!")
             st.success(f"Scraped {len(results)} pages.")
-            st.dataframe(results,width="stretch"); dl_buttons(results,"bulk")
+            st.dataframe(results,width="stretch"); dl_buttons(results,"bulk", sheet_tab="Bulk Scrape")
 
 # ════════════════════════════════════════════════════════════
 # TAB 5 — TWITTER / X
@@ -376,7 +414,7 @@ with tabs[4]:
                     )
                     st.success(f"Collected {len(results)} tweets!")
                     st.dataframe(results, width="stretch")
-                    dl_buttons(results, "twitter_results")
+                    dl_buttons(results, "twitter_results", sheet_tab="Twitter / X")
                 except Exception as e:
                     st.error(f"Error: {e}")
                     st.info("Make sure you run: `python -m playwright install chromium` in your terminal first.")
@@ -418,12 +456,22 @@ with tabs[5]:
                         if data["people"]:
                             st.markdown(f"**Employees ({len(data['people'])})**")
                             st.dataframe(data["people"], width="stretch")
-                            dl_buttons(data["people"], "linkedin_people")
+                            dl_buttons(data["people"], "linkedin_people", sheet_tab="LinkedIn - People")
                         if data["posts"]:
                             st.markdown(f"**Posts ({len(data['posts'])})**")
                             st.dataframe(data["posts"], width="stretch")
-                            dl_buttons(data["posts"], "linkedin_posts")
-                        st.download_button("⬇️ Full JSON", json.dumps(data,indent=2), "linkedin_company.json","application/json")
+                            dl_buttons(data["posts"], "linkedin_posts", sheet_tab="LinkedIn - Posts")
+                        st.download_button("⬇️ Full JSON", json.dumps(data,indent=2), "linkedin_company.json","application/json", key="json_li_co")
+                        if _sheets_ready():
+                            if st.button("📊 Export all to Sheets", key="sh_li_co"):
+                                try:
+                                    import sys,os; sys.path.insert(0,os.path.dirname(__file__))
+                                    from sheets_export import connect, export_linkedin_company
+                                    sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                                    written = export_linkedin_company(sp, data)
+                                    summary = ", ".join(f"**'{k}'** ({v})" for k,v in written.items())
+                                    st.success(f"✅ Exported to {summary} in your Sheet.")
+                                except Exception as e: st.error(f"Sheets export failed: {e}")
                     except Exception as e:
                         st.error(f"Error: {e}")
 
@@ -471,7 +519,7 @@ with tabs[6]:
                         mc2.metric("Verified purchases", verified)
                         mc3.metric("Most common rating", max(set(ratings),key=ratings.count) if ratings else "—")
                     st.dataframe(results, width="stretch")
-                    dl_buttons(results, "amazon_reviews")
+                    dl_buttons(results, "amazon_reviews", sheet_tab="Amazon Reviews")
                 except ValueError as e: st.error(str(e))
                 except Exception as e: st.error(f"Error: {e}")
 
@@ -497,7 +545,7 @@ with tabs[7]:
                         results = scrape_youtube_comments(yt_url.strip(), max_comments=yt_max, headless=headless_mode)
                         st.success(f"Collected {len(results)} comments!")
                         st.dataframe(results, width="stretch")
-                        dl_buttons(results, "youtube_comments")
+                        dl_buttons(results, "youtube_comments", sheet_tab="YouTube - Comments")
                     except Exception as e: st.error(f"Error: {e}")
     else:
         st.markdown('<div class="tip-box">🔑 Requires a free YouTube Data API key. Get one at <strong>console.cloud.google.com</strong> → enable <em>YouTube Data API v3</em> → Create credentials → API key. Paste it in the sidebar.</div>', unsafe_allow_html=True)
@@ -516,7 +564,7 @@ with tabs[7]:
                             results = scrape_youtube_api(yt_query.strip(), mode="search", api_key=yt_api_key, max_results=yt_max)
                             st.success(f"Found {len(results)} videos!")
                             st.dataframe(results, width="stretch")
-                            dl_buttons(results, "youtube_search")
+                            dl_buttons(results, "youtube_search", sheet_tab="YouTube - Search")
                         except Exception as e: st.error(f"Error: {e}")
 
         elif yt_mode == "Channel videos":
@@ -534,7 +582,7 @@ with tabs[7]:
                             results = scrape_youtube_api(yt_channel.strip(), mode="channel", api_key=yt_api_key, max_results=yt_max)
                             st.success(f"Found {len(results)} videos!")
                             st.dataframe(results, width="stretch")
-                            dl_buttons(results, "youtube_channel")
+                            dl_buttons(results, "youtube_channel", sheet_tab="YouTube - Channel")
                         except Exception as e: st.error(f"Error: {e}")
 
         elif yt_mode == "Video details":
@@ -553,7 +601,7 @@ with tabs[7]:
                             results = scrape_youtube_api(vid_id, mode="video", api_key=yt_api_key)
                             st.success("Done!")
                             if results: st.json(results[0])
-                            dl_buttons(results, "youtube_video")
+                            dl_buttons(results, "youtube_video", sheet_tab="YouTube - Video")
                         except Exception as e: st.error(f"Error: {e}")
 
 # ════════════════════════════════════════════════════════════
@@ -598,7 +646,7 @@ with tabs[8]:
                         mc1.metric("Total reviews scraped", len(results))
                         mc2.metric("Most common rating", max(set(ratings), key=ratings.count) if ratings else "—")
                         st.dataframe(results, width="stretch")
-                        dl_buttons(results, "g2_reviews")
+                        dl_buttons(results, "g2_reviews", sheet_tab="G2 Reviews")
 
                 except ImportError as e:
                     st.error(str(e))
