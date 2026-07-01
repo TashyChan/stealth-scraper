@@ -966,24 +966,46 @@ def scrape_g2_undetected(
     results = []
 
     try:
-        # ── Warm-up: land on homepage first like a real visitor ──────────────
-        print("[G2-UC] Warming up on g2.com homepage…")
-        driver.get("https://www.g2.com")
-        time.sleep(random.uniform(8, 15))  # linger like a human
+        # ── Warm-up: arrive via Google like a real user ──────────────────────
+        product_name = g2_url.split("/products/")[-1].split("/")[0].replace("-", " ")
+        search_query = f"{product_name} g2 reviews"
+        google_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
 
-        # Scroll homepage a bit
+        print(f"[G2-UC] Warm-up: searching Google for '{search_query}'…")
+        driver.get(google_url)
+        time.sleep(random.uniform(6, 12))
+
+        # Scroll Google results a bit
+        for _ in range(2):
+            driver.execute_script("window.scrollBy(0, window.innerHeight * 0.5);")
+            time.sleep(random.uniform(1.5, 3.0))
+
+        # Try to click the G2 result, otherwise navigate directly
+        try:
+            links = driver.find_elements(By.CSS_SELECTOR, "a[href*='g2.com']")
+            g2_links = [l for l in links if "g2.com/products" in (l.get_attribute("href") or "")]
+            if g2_links:
+                print("[G2-UC] Clicking G2 link from Google results…")
+                g2_links[0].click()
+                time.sleep(random.uniform(6, 12))
+            else:
+                raise Exception("No G2 link in results")
+        except Exception:
+            print("[G2-UC] Navigating directly to g2.com homepage…")
+            driver.get("https://www.g2.com")
+            time.sleep(random.uniform(6, 12))
+
+        # Scroll the landing page
         for _ in range(3):
             driver.execute_script("window.scrollBy(0, window.innerHeight * 0.6);")
             time.sleep(random.uniform(1.5, 3.0))
 
         # Check login on first run
         if first_run:
-            if "sign_in" in driver.current_url or "session" in driver.current_url or \
-               not any(c["name"] in ("remember_token", "_g2_session", "user_id")
-                       for c in driver.get_cookies()):
+            cookies = {c["name"] for c in driver.get_cookies()}
+            if not ("remember_token" in cookies or "_g2_session" in cookies):
                 print("[G2-UC] Please log in to G2 in the browser window.")
                 print("[G2-UC] The script will continue automatically once you're logged in.")
-                # Wait up to 3 minutes for login
                 for _ in range(36):
                     time.sleep(5)
                     cookies = {c["name"] for c in driver.get_cookies()}
@@ -994,12 +1016,13 @@ def scrape_g2_undetected(
                     print("[G2-UC] Login timeout — proceeding anyway.")
 
         # ── Scrape pages ─────────────────────────────────────────────────────
+        blocked = False
         for pg in range(1, max_pages + 1):
             url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
             print(f"[G2-UC] Page {pg}/{max_pages}: {url}")
 
             driver.get(url)
-            time.sleep(random.uniform(5, 10))  # longer wait — looks more human
+            time.sleep(random.uniform(5, 10))
 
             # Scroll to load lazy content
             for _ in range(5):
@@ -1009,9 +1032,17 @@ def scrape_g2_undetected(
             time.sleep(1.5)
 
             # Check if blocked
-            body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+            try:
+                body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+            except Exception:
+                print("[G2-UC] Browser closed unexpectedly — stopping.")
+                blocked = True
+                break
             if "temporarily restricted" in body_text or "access denied" in body_text:
-                print("[G2-UC] ⚠️  Still blocked. Try waiting 30–60 min for IP cooldown, then re-run.")
+                print("[G2-UC] ⚠️  G2 IP block still active.")
+                print("[G2-UC] ➜  Close the app, wait 30–60 minutes, then try again.")
+                print("[G2-UC] ➜  Using a VPN or different network will also fix this immediately.")
+                blocked = True
                 break
 
             # Parse review cards
@@ -1103,7 +1134,10 @@ def scrape_g2_undetected(
                 break
 
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass  # browser may have already closed
 
     print(f"[G2-UC] Collected {len(results)} reviews total.")
     return results
