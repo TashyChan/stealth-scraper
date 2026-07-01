@@ -911,11 +911,15 @@ def scrape_g2_undetected(
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
     except ImportError:
-        raise ImportError(
-            "undetected-chromedriver is not installed.\n"
-            "Run:  pip install undetected-chromedriver selenium\n"
-            "Then restart the app and try again."
-        )
+        import sys, subprocess
+        print("[G2-UC] undetected-chromedriver not found — installing now...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install",
+                               "undetected-chromedriver", "selenium"])
+        import undetected_chromedriver as uc
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        print("[G2-UC] Installed successfully ✓")
 
     if "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
