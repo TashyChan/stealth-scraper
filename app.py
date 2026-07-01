@@ -594,8 +594,8 @@ G2 can't distinguish your real Chrome (with all your history, cookies & extensio
             key="g2_real_profile"
         )
         st.markdown("---")
-        st.markdown("**Alternative: use a proxy**  
-Format: `http://host:port` or `socks5://host:port`")
+        st.markdown("**Alternative: use a proxy**")
+        st.code("http://host:port   or   socks5://host:port", language=None)
         g2_proxy = st.text_input("Proxy (optional)", placeholder="http://123.45.67.89:8080", label_visibility="visible")
 
     if st.button("▶  Scrape G2 Reviews", key="g2_go"):
