@@ -561,12 +561,26 @@ with tabs[7]:
 # ════════════════════════════════════════════════════════════
 with tabs[8]:
     st.subheader("🟡 G2 Reviews")
-    st.caption("Scrapes reviews from your company's G2 page. Logs in automatically to bypass G2's block.")
+    st.caption("Scrapes reviews from your company's G2 page using undetected-chromedriver.")
 
-    st.markdown('<div class="tip-box">🔐 G2 requires you to be logged in to view reviews. A browser window will open — log in with your G2 account (or a dummy account) on the first run. Your session is saved so you won\'t need to log in again.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="tip-box">'
+        '🛡️ <b>New approach — undetected-chromedriver</b><br>'
+        'G2 was blocking the old Playwright method at the fingerprint level. '
+        'This new method patches Chrome at a lower level and is much harder to detect.<br><br>'
+        '📦 <b>One-time setup (if you haven\'t already):</b> open PowerShell and run:<br>'
+        '<code>pip install undetected-chromedriver selenium</code><br><br>'
+        '🔐 On the <b>first run</b> a Chrome window will open — log in to G2, then the scraper continues automatically. '
+        'Your session is saved in <code>g2_uc_profile/</code> so you never need to log in again.<br><br>'
+        '⏱️ The scraper waits 30–90 s between pages to mimic real human browsing — this is intentional!'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
     g2_url   = st.text_input("G2 product URL", placeholder="https://www.g2.com/products/your-product/reviews")
     g2_pages = st.slider("Pages to scrape (up to ~10 reviews per page)", 1, 20, 5)
+
+    st.info("💡 Tip: if you still get blocked after switching to this method, wait 30–60 minutes for G2's IP cooldown to expire, then try again.")
 
     if st.button("▶  Scrape G2 Reviews", key="g2_go"):
         if not g2_url.strip():
@@ -574,19 +588,23 @@ with tabs[8]:
         elif "g2.com" not in g2_url:
             st.error("That doesn't look like a G2 URL — make sure it starts with https://www.g2.com/products/...")
         else:
-            with st.spinner(f"Opening browser… log in to G2 if prompted, then scraping will start automatically."):
+            with st.spinner("Opening Chrome… log in to G2 if prompted, then scraping will start automatically. This takes a few minutes — the long waits are intentional!"):
                 try:
                     import sys, os; sys.path.insert(0, os.path.dirname(__file__))
-                    from social_scrapers import scrape_g2_reviews_logged_in
-                    results = scrape_g2_reviews_logged_in(
+                    from social_scrapers import scrape_g2_undetected
+                    results = scrape_g2_undetected(
                         g2_url=g2_url.strip(),
                         max_pages=g2_pages,
-                        headless=headless_mode,
                     )
                     if not results:
-                        st.warning("No reviews found — try turning OFF 'Hide browser windows' in the sidebar so you can see what's happening.")
+                        st.warning(
+                            "No reviews found. Possible causes:\n"
+                            "- G2 is still blocking (IP cooldown needed — wait 30–60 min and retry)\n"
+                            "- Review cards have changed structure — check the browser window\n"
+                            "- You may need to log in: delete the `g2_uc_profile/` folder and run again"
+                        )
                     else:
-                        st.success(f"Collected {len(results)} reviews!")
+                        st.success(f"✅ Collected {len(results)} reviews!")
                         ratings = [r["rating"] for r in results if r.get("rating")]
                         mc1, mc2 = st.columns(2)
                         mc1.metric("Total reviews scraped", len(results))
@@ -594,6 +612,8 @@ with tabs[8]:
                         st.dataframe(results, use_container_width=True)
                         dl_buttons(results, "g2_reviews")
 
+                except ImportError as e:
+                    st.error(str(e))
                 except Exception as e:
                     st.error(f"Error: {e}")
-                    st.info("Make sure playwright is installed: run `python -m playwright install chromium` in your terminal.")
+                    st.info("If you see a ChromeDriver version error, run: `pip install --upgrade undetected-chromedriver`")

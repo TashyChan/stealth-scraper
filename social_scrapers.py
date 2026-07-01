@@ -885,3 +885,200 @@ def scrape_g2_with_real_chrome(
 
     print(f"[G2] Collected {len(results)} reviews.")
     return results
+
+
+# G2 — UNDETECTED CHROMEDRIVER (best anti-bot bypass)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def scrape_g2_undetected(
+    g2_url: str,
+    max_pages: int = 5,
+    profile_dir: str = "g2_uc_profile",
+) -> list[dict]:
+    """
+    Scrape G2 reviews using undetected-chromedriver.
+    Patches Chrome at a binary level — much harder for G2 to detect than Playwright.
+
+    First run: a Chrome window opens → log in to G2 → the scraper continues automatically.
+    Your session is saved in g2_uc_profile/ so you never need to log in again.
+
+    Install once:  pip install undetected-chromedriver selenium
+    """
+    import json as _json
+    try:
+        import undetected_chromedriver as uc
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+    except ImportError:
+        raise ImportError(
+            "undetected-chromedriver is not installed.\n"
+            "Run:  pip install undetected-chromedriver selenium\n"
+            "Then restart the app and try again."
+        )
+
+    if "/reviews" not in g2_url:
+        g2_url = g2_url.rstrip("/") + "/reviews"
+
+    profile_path = Path(__file__).parent / profile_dir
+    profile_path.mkdir(exist_ok=True)
+    first_run = not (profile_path / "Default" / "Cookies").exists()
+
+    print(f"[G2-UC] Profile: {profile_path}")
+    if first_run:
+        print("[G2-UC] First run — log in to G2 when the browser opens, then wait.")
+
+    options = uc.ChromeOptions()
+    options.add_argument(f"--user-data-dir={profile_path}")
+    options.add_argument("--profile-directory=Default")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    # Extra stealth: realistic window size and language
+    options.add_argument("--window-size=1366,768")
+    options.add_argument("--lang=en-US")
+
+    driver = uc.Chrome(options=options, headless=False)
+    results = []
+
+    try:
+        # ── Warm-up: land on homepage first like a real visitor ──────────────
+        print("[G2-UC] Warming up on g2.com homepage…")
+        driver.get("https://www.g2.com")
+        time.sleep(random.uniform(8, 15))  # linger like a human
+
+        # Scroll homepage a bit
+        for _ in range(3):
+            driver.execute_script("window.scrollBy(0, window.innerHeight * 0.6);")
+            time.sleep(random.uniform(1.5, 3.0))
+
+        # Check login on first run
+        if first_run:
+            if "sign_in" in driver.current_url or "session" in driver.current_url or \
+               not any(c["name"] in ("remember_token", "_g2_session", "user_id")
+                       for c in driver.get_cookies()):
+                print("[G2-UC] Please log in to G2 in the browser window.")
+                print("[G2-UC] The script will continue automatically once you're logged in.")
+                # Wait up to 3 minutes for login
+                for _ in range(36):
+                    time.sleep(5)
+                    cookies = {c["name"] for c in driver.get_cookies()}
+                    if "remember_token" in cookies or "_g2_session" in cookies:
+                        print("[G2-UC] Login detected ✓")
+                        break
+                else:
+                    print("[G2-UC] Login timeout — proceeding anyway.")
+
+        # ── Scrape pages ─────────────────────────────────────────────────────
+        for pg in range(1, max_pages + 1):
+            url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
+            print(f"[G2-UC] Page {pg}/{max_pages}: {url}")
+
+            driver.get(url)
+            time.sleep(random.uniform(5, 10))  # longer wait — looks more human
+
+            # Scroll to load lazy content
+            for _ in range(5):
+                driver.execute_script("window.scrollBy(0, window.innerHeight * 0.7);")
+                time.sleep(random.uniform(1.0, 2.5))
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(1.5)
+
+            # Check if blocked
+            body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+            if "temporarily restricted" in body_text or "access denied" in body_text:
+                print("[G2-UC] ⚠️  Still blocked. Try waiting 30–60 min for IP cooldown, then re-run.")
+                break
+
+            # Parse review cards
+            cards = driver.find_elements(By.CSS_SELECTOR, "article[itemprop='review']")
+            if not cards:
+                print(f"[G2-UC] No review cards found on page {pg}. Stopping.")
+                print(f"[G2-UC] Page preview: {body_text[:300]}")
+                break
+
+            print(f"[G2-UC] Found {len(cards)} review cards on page {pg}.")
+
+            for card in cards:
+                try:
+                    def _t(sel):
+                        try:
+                            return card.find_element(By.CSS_SELECTOR, sel).text.strip()
+                        except Exception:
+                            return ""
+
+                    def _attr(sel, attr):
+                        try:
+                            return card.find_element(By.CSS_SELECTOR, sel).get_attribute(attr) or ""
+                        except Exception:
+                            return ""
+
+                    # Reviewer name
+                    name = (
+                        _t("[itemprop='author'] [itemprop='name']") or
+                        _t("[itemprop='author']") or
+                        "Anonymous"
+                    )
+
+                    # Role / company size
+                    role = _t("[class*='elv-text-sm']") or _t("div.mt-4th") or ""
+
+                    # Star rating from content attribute
+                    rating = (
+                        _attr("[itemprop='reviewRating'] [itemprop='ratingValue']", "content") or
+                        _attr("[itemprop='ratingValue']", "content") or
+                        _t("[itemprop='ratingValue']")
+                    )
+
+                    # Review title
+                    title = _t("[itemprop='name'] div") or _t("h3") or ""
+
+                    # Pros / Cons — first two <p> tags inside elv- divs
+                    paras = card.find_elements(
+                        By.CSS_SELECTOR,
+                        "div[class*='elv-'] p, div[class*='formatted'] p"
+                    )
+                    pros = paras[0].text.strip() if len(paras) > 0 else ""
+                    cons = paras[1].text.strip() if len(paras) > 1 else ""
+
+                    # Date — try <time> element first, then data attribute on card
+                    try:
+                        time_el = card.find_element(By.TAG_NAME, "time")
+                        date = time_el.get_attribute("datetime") or time_el.text.strip()
+                    except Exception:
+                        date = ""
+                    if not date:
+                        try:
+                            dp = card.get_attribute("data-track-in-viewport-options") or "{}"
+                            date = _json.loads(dp).get("published_date", "")
+                        except Exception:
+                            pass
+
+                    if name or title or pros:
+                        results.append({
+                            "reviewer": name, "role": role, "rating": rating,
+                            "title": title, "pros": pros, "cons": cons, "date": date,
+                        })
+                except Exception:
+                    pass
+
+            # Random inter-page delay (30–90 s) — mimics a human reading reviews
+            if pg < max_pages:
+                wait = random.uniform(30, 90)
+                print(f"[G2-UC] Waiting {wait:.0f}s before next page (human pacing)…")
+                time.sleep(wait)
+
+            # Next page button check
+            try:
+                driver.find_element(By.CSS_SELECTOR,
+                    "a[data-next-page], li.next a, a[aria-label='Next page'], "
+                    ".pagination-next a, a[rel='next']")
+            except Exception:
+                if pg < max_pages:
+                    print(f"[G2-UC] No next-page button found after page {pg}, stopping.")
+                break
+
+    finally:
+        driver.quit()
+
+    print(f"[G2-UC] Collected {len(results)} reviews total.")
+    return results
