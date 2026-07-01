@@ -257,98 +257,61 @@ with tabs[0]:
                         st.text_area("",res["text"][:3000],height=200)
                         st.markdown('</div>',unsafe_allow_html=True)
 
-                    dl_buttons([res] if not isinstance(res.get("links",[]),list) else [{"scan":str(res)}],"scan", sheet_tab="Quick Scan")
+                    # ── Downloads — one clean export per data type ────────────
+                    if want_meta and "metadata" in res:
+                        dl_buttons([res["metadata"]], "scan_metadata", sheet_tab="Quick Scan - Metadata")
+                    if want_links and "links" in res:
+                        link_rows = [{"url": l} for l in res["links"]]
+                        dl_buttons(link_rows, "scan_links", sheet_tab="Quick Scan - Links")
+                    if want_text and "text" in res:
+                        dl_buttons([{"url": url, "text": res["text"]}], "scan_text", sheet_tab="Quick Scan - Text")
                 except PermissionError as e: st.error(f"🚫 {e}")
                 except Exception as e: st.error(f"Error: {e}")
 
 # ════════════════════════════════════════════════════════════
-# TAB 2 — EXTRACT DATA
+# TAB 2 — EXTRACT DATA  (content sections → Sheets)
 # ════════════════════════════════════════════════════════════
 with tabs[1]:
     st.subheader("🎯 Extract Data")
-    url=st.text_input("URL",placeholder="https://example.com/product",key="ext_url")
-    if url.strip():
-        p=show_platform_badge(url)
-        if p["suggested_selectors"] and st.button(f"✨ Auto-fill selectors for {p['name']}",key="ext_auto"):
-            st.session_state.selectors=[{"name":k,"selector":v} for k,v in p["suggested_selectors"].items()]; st.rerun()
-    with st.expander("💡 CSS Selector tips"):
-        st.markdown("|What|Selector|\n|---|---|\n|Headline|`h1`|\n|Div with class|`div.product-title`|\n|Price span|`span.price`|\n|By ID|`#main-content`|")
-    if "selectors" not in st.session_state:
-        st.session_state.selectors=[{"name":"title","selector":"h1"},{"name":"description","selector":"p"}]
-    to_del=[]
-    for i,row in enumerate(st.session_state.selectors):
-        c1,c2,c3=st.columns([2,3,.5])
-        st.session_state.selectors[i]["name"]=c1.text_input("Field",value=row["name"],key=f"en_{i}",label_visibility="collapsed",placeholder="field name")
-        st.session_state.selectors[i]["selector"]=c2.text_input("Sel",value=row["selector"],key=f"es_{i}",label_visibility="collapsed",placeholder="CSS selector")
-        if c3.button("✕",key=f"ed_{i}"): to_del.append(i)
-    for i in reversed(to_del): st.session_state.selectors.pop(i)
-    if st.button("+ Add field",key="ext_add"): st.session_state.selectors.append({"name":"","selector":""}); st.rerun()
-    if st.button("▶  Extract",key="ext_go"):
-        sels={r["name"]:r["selector"] for r in st.session_state.selectors if r["name"] and r["selector"]}
-        if not url.strip(): st.error("Enter a URL.")
-        elif not sels: st.error("Add at least one field.")
+    st.caption("Paste a site URL, find all its pages, tick the ones you want, and export each page's content as its own Sheet tab — with a **Your Comments** column for annotations.")
+
+    if not _sheets_ready():
+        st.info("📊 Connect Google Sheets in the sidebar to enable export.")
+
+    cs_site = st.text_input("Site URL", key="cs_site", placeholder="https://example.com")
+
+    if st.button("🔍 Find pages", key="cs_find"):
+        if not cs_site.strip():
+            st.error("Enter a URL.")
         else:
-            with st.spinner("Extracting…"):
+            with st.spinner("Scanning for pages…"):
                 try:
-                    result=make_scraper().extract_structured(url,sels); st.success("Done!")
-                    for k,v in result.items():
-                        if k=="url": continue
-                        st.markdown(f"**{k}**"); st.code(str(v) if v else "(not found)",language=None)
-                    ecols = st.columns(2) if not _sheets_ready() else st.columns(3)
-                    ecols[0].download_button("⬇️ JSON",json.dumps(result,indent=2),"extracted.json","application/json", key="json_extracted")
-                    if _sheets_ready():
-                        if ecols[1].button("📊 → Sheets", key="sh_extracted"):
-                            try:
-                                import sys,os; sys.path.insert(0,os.path.dirname(__file__))
-                                from sheets_export import connect, export_single
-                                sp = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
-                                export_single(sp, "Extract Data", result)
-                                st.success("✅ Exported to **'Extract Data'** tab in your Sheet.")
-                            except Exception as e: st.error(f"Sheets export failed: {e}")
-                except Exception as e: st.error(f"Error: {e}")
+                    links = make_scraper().extract_links(cs_site.strip(), same_domain_only=True)
+                    all_pages = [cs_site.strip()] + [l for l in links if l != cs_site.strip()]
+                    st.session_state["cs_pages"]    = all_pages
+                    st.session_state["cs_selected"] = {u: True for u in all_pages}
+                except Exception as e:
+                    st.error(f"Could not fetch pages: {e}")
 
-    # ── Content Sections → Sheets ─────────────────────────────────────────────
-    if _sheets_ready():
-        st.markdown("---")
-        st.markdown("### 📝 Content sections → Sheets")
-        st.caption("Paste a site URL, find all its pages, tick the ones you want, and export each page's content as its own Sheet tab — with a **Your Comments** column for annotations.")
+    if st.session_state.get("cs_pages"):
+        pages = st.session_state["cs_pages"]
+        st.markdown(f"**{len(pages)} pages found** — tick the ones you want to export:")
 
-        cs_site = st.text_input("Site URL to crawl for pages", key="cs_site",
-                                placeholder="https://example.com")
+        ca, cb = st.columns(2)
+        if ca.button("✅ Select all",   key="cs_all"):
+            st.session_state["cs_selected"] = {u: True  for u in pages}; st.rerun()
+        if cb.button("⬜ Deselect all", key="cs_none"):
+            st.session_state["cs_selected"] = {u: False for u in pages}; st.rerun()
 
-        if st.button("🔍 Find pages", key="cs_find"):
-            if not cs_site.strip():
-                st.error("Enter a URL.")
-            else:
-                with st.spinner("Scanning for pages…"):
-                    try:
-                        links = make_scraper().extract_links(cs_site.strip(), same_domain_only=True)
-                        # Add the root URL itself
-                        all_pages = [cs_site.strip()] + [l for l in links if l != cs_site.strip()]
-                        st.session_state["cs_pages"] = all_pages
-                        st.session_state["cs_selected"] = {u: True for u in all_pages}
-                    except Exception as e:
-                        st.error(f"Could not fetch pages: {e}")
+        for u in pages:
+            checked = st.session_state["cs_selected"].get(u, True)
+            st.session_state["cs_selected"][u] = st.checkbox(u, value=checked, key=f"cs_chk_{u}")
 
-        if st.session_state.get("cs_pages"):
-            pages = st.session_state["cs_pages"]
-            st.markdown(f"**{len(pages)} pages found** — tick the ones you want to export:")
+        chosen = [u for u, v in st.session_state["cs_selected"].items() if v]
+        st.caption(f"{len(chosen)} of {len(pages)} pages selected")
 
-            # Select / deselect all
-            ca, cb = st.columns(2)
-            if ca.button("✅ Select all", key="cs_all"):
-                st.session_state["cs_selected"] = {u: True for u in pages}; st.rerun()
-            if cb.button("⬜ Deselect all", key="cs_none"):
-                st.session_state["cs_selected"] = {u: False for u in pages}; st.rerun()
-
-            for u in pages:
-                checked = st.session_state["cs_selected"].get(u, True)
-                st.session_state["cs_selected"][u] = st.checkbox(u, value=checked, key=f"cs_chk_{u}")
-
-            chosen = [u for u, v in st.session_state["cs_selected"].items() if v]
-            st.caption(f"{len(chosen)} of {len(pages)} pages selected")
-
-            if chosen and st.button(f"📝 Export {len(chosen)} page(s) to Sheets", key="cs_export"):
+        if chosen and _sheets_ready():
+            if st.button(f"📝 Export {len(chosen)} page(s) to Sheets", key="cs_export"):
                 import sys, os; sys.path.insert(0, os.path.dirname(__file__))
                 from sheets_export import connect, export_content_sections
                 from urllib.parse import urlparse as _up
@@ -361,7 +324,6 @@ with tabs[1]:
                         bar.progress((i + 1) / len(chosen), text=f"Scraping {i+1}/{len(chosen)}: {u[:60]}")
                         try:
                             _, soup = sc.fetch(u)
-                            # Tab name = page title or URL slug, max 90 chars
                             title_tag = soup.find("title")
                             tab_name  = title_tag.get_text(strip=True) if title_tag else ""
                             if not tab_name:
@@ -383,6 +345,9 @@ with tabs[1]:
                             st.warning(f"⚠️ Failed: `{u}` — {e}")
                 except Exception as e:
                     st.error(f"Sheets connection failed: {e}")
+        elif chosen and not _sheets_ready():
+            st.info("Connect Google Sheets in the sidebar to export selected pages.")
+
 # ════════════════════════════════════════════════════════════
 with tabs[2]:
     st.subheader("🕸️ Crawl Site")
