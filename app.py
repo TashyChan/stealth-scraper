@@ -171,112 +171,32 @@ def dl_buttons(data, stem, sheet_tab=None):
                 st.error(f"Sheets export failed: {e}")
 
 # ── Main tabs ─────────────────────────────────────────────────────────────────
-tabs = st.tabs(["🔍 Quick Scan", "🎯 Extract Data", "🕸️ Crawl Site", "📋 Bulk Scrape",
+tabs = st.tabs(["🎯 Extract Data", "🕸️ Crawl Site", "📋 Bulk Scrape",
                 "🐦 Twitter / X", "💼 LinkedIn", "📦 Amazon Reviews", "▶️ YouTube", "🟡 G2 Reviews"])
 
 # ════════════════════════════════════════════════════════════
-# TAB 1 — QUICK SCAN
+# TAB 1 — EXTRACT DATA
 # ════════════════════════════════════════════════════════════
+def _categorise(pages, base_url):
+    """Group URLs by their first path segment."""
+    from collections import defaultdict
+    cats = defaultdict(list)
+    for u in pages:
+        path = urlparse(u).path.strip("/")
+        seg  = path.split("/")[0] if path else ""
+        cats[seg or "home"].append(u)
+    # Home first, rest alphabetical
+    ordered = {}
+    if "home" in cats: ordered["home"] = cats.pop("home")
+    for k in sorted(cats): ordered[k] = cats[k]
+    return ordered
+
 with tabs[0]:
-    st.subheader("🔍 Quick Scan")
-    st.caption("Paste any URL to grab its title, description, links and text.")
-    url = st.text_input("Website URL", placeholder="https://example.com", key="quick_url")
-    BLOCKED = {
-        "g2.com": ("🟡 G2 Reviews", "G2 Reviews"),
-        "linkedin.com": ("💼 LinkedIn", "LinkedIn"),
-        "twitter.com": ("🐦 Twitter / X", "Twitter / X"),
-        "x.com": ("🐦 Twitter / X", "Twitter / X"),
-        "amazon.com": ("📦 Amazon Reviews", "Amazon Reviews"),
-        "youtube.com": ("▶️ YouTube", "YouTube"),
-    }
-
-    if url.strip():
-        platform = show_platform_badge(url)
-        domain = urlparse(url).netloc.lower().replace("www.","")
-        blocked = next(((name, tab) for pattern, (name, tab) in BLOCKED.items() if pattern in domain), None)
-        if blocked:
-            st.warning(f"⚠️ **{blocked[0]} can't be scraped here.** Click the **{blocked[1]} tab** at the top of the page instead — it uses a real browser to bypass their block.")
-
-    c1,c2,c3 = st.columns(3)
-    want_meta=c1.checkbox("Page metadata",value=True)
-    want_links=c2.checkbox("All links",value=True)
-    want_text=c3.checkbox("Visible text",value=False)
-
-    if st.button("▶  Scan Page"):
-        if not url.strip(): st.error("Enter a URL first.")
-        else:
-            domain = urlparse(url).netloc.lower().replace("www.","")
-            blocked = next(((name, tab) for pattern, (name, tab) in BLOCKED.items() if pattern in domain), None)
-            if blocked:
-                st.warning(f"⚠️ **{blocked[0]} can't be scraped here.** Click the **{blocked[1]} tab** at the top of the page instead!")
-            else:
-              with st.spinner("Scanning…"):
-                try:
-                    sc = make_scraper(); res = {}
-                    if want_meta:  res["metadata"] = sc.extract_metadata(url)
-                    if want_links: res["links"]    = sc.extract_links(url)
-                    if want_text:  res["text"]     = sc.extract_text(url)
-                    st.success("Done!")
-
-                    if want_meta and "metadata" in res:
-                        m=res["metadata"]
-                        st.markdown('<div class="result-box"><h3>Metadata</h3>',unsafe_allow_html=True)
-                        a,b=st.columns(2); a.metric("Title",m.get("title") or "—"); b.metric("Canonical",m.get("canonical") or "—")
-                        if m.get("description"): st.info(f"**Description:** {m['description']}")
-                        st.markdown('</div>',unsafe_allow_html=True)
-
-                    if want_links and "links" in res:
-                        links=res["links"]
-                        st.markdown(f'<div class="result-box"><h3>Links ({len(links)})</h3>',unsafe_allow_html=True)
-                        filt=st.text_input("Filter links",placeholder="Type to filter…",key="lf")
-                        shown=[l for l in links if filt.lower() in l.lower()] if filt else links
-                        for l in shown[:100]: st.markdown(f"• `{l}`")
-                        if len(shown)>100: st.caption(f"…and {len(shown)-100} more")
-                        st.markdown("---")
-                        st.markdown("**Bulk-scrape these links:**")
-                        bc1,bc2=st.columns(2)
-                        bf1=bc1.text_input("Field 1",value="heading",key="ql_f1"); bs1=bc2.text_input("Selector 1",value="h1",key="ql_s1")
-                        bc3,bc4=st.columns(2)
-                        bf2=bc3.text_input("Field 2",value="body",key="ql_f2"); bs2=bc4.text_input("Selector 2",value="p",key="ql_s2")
-                        n=st.slider("Max links to scrape",1,min(len(shown),50),min(10,len(shown)),key="ql_n")
-                        if st.button(f"🚀 Scrape top {n} links",key="ql_go"):
-                            sels={bf1:bs1,bf2:bs2}
-                            sels={k:v for k,v in sels.items() if k and v}
-                            sc2=make_scraper(); br=[]; pb=st.progress(0)
-                            for i,u in enumerate(shown[:n]):
-                                pb.progress((i+1)/n,text=f"{i+1}/{n}: {u[:50]}")
-                                try: br.append(sc2.extract_structured(u,sels))
-                                except Exception as e: br.append({"url":u,"error":str(e)})
-                            pb.progress(1.0,text="Done!")
-                            st.dataframe(br,width="stretch")
-                            dl_buttons(br,"links_scraped", sheet_tab="Quick Scan - Links")
-                        st.markdown('</div>',unsafe_allow_html=True)
-
-                    if want_text and "text" in res:
-                        st.markdown('<div class="result-box"><h3>Text</h3>',unsafe_allow_html=True)
-                        st.text_area("",res["text"][:3000],height=200)
-                        st.markdown('</div>',unsafe_allow_html=True)
-
-                    # ── Downloads — one clean export per data type ────────────
-                    if want_meta and "metadata" in res:
-                        dl_buttons([res["metadata"]], "scan_metadata", sheet_tab="Quick Scan - Metadata")
-                    if want_links and "links" in res:
-                        link_rows = [{"url": l} for l in res["links"]]
-                        dl_buttons(link_rows, "scan_links", sheet_tab="Quick Scan - Links")
-                    if want_text and "text" in res:
-                        dl_buttons([{"url": url, "text": res["text"]}], "scan_text", sheet_tab="Quick Scan - Text")
-                except PermissionError as e: st.error(f"🚫 {e}")
-                except Exception as e: st.error(f"Error: {e}")
-
-# ════════════════════════════════════════════════════════════
-# TAB 2 — EXTRACT DATA  (content sections → Sheets)
-# ════════════════════════════════════════════════════════════
-with tabs[1]:
     st.subheader("🎯 Extract Data")
-    st.caption("Paste a site URL, find all its pages, tick the ones you want, and export each page's content as its own Sheet tab — with a **Your Comments** column for annotations.")
+    st.caption("Find all pages on a site, pick the ones you want, export links as CSV or push content sections to Google Sheets.")
 
     if not _sheets_ready():
-        st.info("📊 Connect Google Sheets in the sidebar to enable export.")
+        st.info("📊 Connect Google Sheets in the sidebar to enable content export.")
 
     cs_site = st.text_input("Site URL", key="cs_site", placeholder="https://example.com")
 
@@ -289,67 +209,95 @@ with tabs[1]:
                     links = make_scraper().extract_links(cs_site.strip(), same_domain_only=True)
                     all_pages = [cs_site.strip()] + [l for l in links if l != cs_site.strip()]
                     st.session_state["cs_pages"]    = all_pages
-                    st.session_state["cs_selected"] = {u: True for u in all_pages}
+                    st.session_state["cs_selected"] = {u: False for u in all_pages}
                 except Exception as e:
                     st.error(f"Could not fetch pages: {e}")
 
     if st.session_state.get("cs_pages"):
         pages = st.session_state["cs_pages"]
-        st.markdown(f"**{len(pages)} pages found** — tick the ones you want to export:")
+        cats  = _categorise(pages, cs_site)
 
-        ca, cb = st.columns(2)
-        if ca.button("✅ Select all",   key="cs_all"):
+        st.markdown(f"**{len(pages)} pages found across {len(cats)} categories** — tick the ones you want:")
+
+        # ── Global select / deselect ─────────────────────────────────────────
+        ga, gb = st.columns(2)
+        if ga.button("✅ Select all",   key="cs_all"):
             st.session_state["cs_selected"] = {u: True  for u in pages}; st.rerun()
-        if cb.button("⬜ Deselect all", key="cs_none"):
+        if gb.button("⬜ Deselect all", key="cs_none"):
             st.session_state["cs_selected"] = {u: False for u in pages}; st.rerun()
 
-        for u in pages:
-            checked = st.session_state["cs_selected"].get(u, True)
-            st.session_state["cs_selected"][u] = st.checkbox(u, value=checked, key=f"cs_chk_{u}")
+        # ── Per-category expanders ────────────────────────────────────────────
+        for cat, urls in cats.items():
+            cat_selected = sum(1 for u in urls if st.session_state["cs_selected"].get(u))
+            label = f"📁 {cat}  ({cat_selected}/{len(urls)} selected)"
+            with st.expander(label, expanded=False):
+                cc1, cc2 = st.columns(2)
+                if cc1.button(f"✅ All", key=f"cat_all_{cat}"):
+                    for u in urls: st.session_state["cs_selected"][u] = True
+                    st.rerun()
+                if cc2.button(f"⬜ None", key=f"cat_none_{cat}"):
+                    for u in urls: st.session_state["cs_selected"][u] = False
+                    st.rerun()
+                for u in urls:
+                    checked = st.session_state["cs_selected"].get(u, False)
+                    st.session_state["cs_selected"][u] = st.checkbox(
+                        u, value=checked, key=f"cs_chk_{u}")
 
-        chosen = [u for u, v in st.session_state["cs_selected"].items() if v]
+        chosen = [u for u in pages if st.session_state["cs_selected"].get(u)]
         st.caption(f"{len(chosen)} of {len(pages)} pages selected")
 
-        if chosen and _sheets_ready():
-            if st.button(f"📝 Export {len(chosen)} page(s) to Sheets", key="cs_export"):
-                import sys, os; sys.path.insert(0, os.path.dirname(__file__))
-                from sheets_export import connect, export_content_sections
-                from urllib.parse import urlparse as _up
-                try:
-                    sp  = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
-                    sc  = make_scraper()
-                    bar = st.progress(0)
-                    results = []
-                    for i, u in enumerate(chosen):
-                        bar.progress((i + 1) / len(chosen), text=f"Scraping {i+1}/{len(chosen)}: {u[:60]}")
-                        try:
-                            _, soup = sc.fetch(u)
-                            title_tag = soup.find("title")
-                            tab_name  = title_tag.get_text(strip=True) if title_tag else ""
-                            if not tab_name:
-                                path = _up(u).path.strip("/").replace("/", " › ")
-                                tab_name = path or _up(u).netloc
-                            tab_name = tab_name[:90]
-                            n = export_content_sections(sp, tab_name, soup)
-                            results.append((u, tab_name, n, None))
-                        except Exception as e:
-                            results.append((u, "—", 0, str(e)))
-                    bar.progress(1.0, text="Done!")
-                    ok  = [(u, t, n) for u, t, n, e in results if e is None]
-                    err = [(u, e)    for u, t, n, e in results if e]
-                    if ok:
-                        lines = "\n".join(f"• **{t}** — {n} sections" for _, t, n in ok)
-                        st.success(f"✅ Exported {len(ok)} page(s) to your Sheet:\n{lines}")
-                    if err:
+        if chosen:
+            st.markdown("---")
+            ea, eb = st.columns(2)
+
+            # ── Export links as CSV ───────────────────────────────────────────
+            link_rows = [{"url": u} for u in chosen]
+            ea.download_button(
+                "⬇️ Download links CSV",
+                to_csv_bytes(link_rows),
+                "links.csv", "text/csv",
+                key="csv_links"
+            )
+
+            # ── Export content to Sheets ──────────────────────────────────────
+            if _sheets_ready():
+                if eb.button(f"📝 Export content to Sheets ({len(chosen)} pages)", key="cs_export"):
+                    import sys, os; sys.path.insert(0, os.path.dirname(__file__))
+                    from sheets_export import connect, export_content_sections
+                    try:
+                        sp  = connect(st.session_state["sheets_creds"], st.session_state["sheets_url"])
+                        sc  = make_scraper()
+                        bar = st.progress(0)
+                        results = []
+                        for i, u in enumerate(chosen):
+                            bar.progress((i+1)/len(chosen), text=f"{i+1}/{len(chosen)}: {u[:60]}")
+                            try:
+                                _, soup = sc.fetch(u)
+                                title_tag = soup.find("title")
+                                tab_name  = title_tag.get_text(strip=True) if title_tag else ""
+                                if not tab_name:
+                                    path = urlparse(u).path.strip("/").replace("/", " › ")
+                                    tab_name = path or urlparse(u).netloc
+                                tab_name = tab_name[:90]
+                                n = export_content_sections(sp, tab_name, soup)
+                                results.append((u, tab_name, n, None))
+                            except Exception as e:
+                                results.append((u, "—", 0, str(e)))
+                        bar.progress(1.0, text="Done!")
+                        ok  = [(u,t,n) for u,t,n,e in results if e is None]
+                        err = [(u,e)   for u,t,n,e in results if e]
+                        if ok:
+                            lines = "\n".join(f"• **{t}** — {n} sections" for _,t,n in ok)
+                            st.success(f"✅ Exported {len(ok)} page(s):\n{lines}")
                         for u, e in err:
                             st.warning(f"⚠️ Failed: `{u}` — {e}")
-                except Exception as e:
-                    st.error(f"Sheets connection failed: {e}")
-        elif chosen and not _sheets_ready():
-            st.info("Connect Google Sheets in the sidebar to export selected pages.")
+                    except Exception as e:
+                        st.error(f"Sheets connection failed: {e}")
+            else:
+                eb.info("Connect Sheets in sidebar to export content.")
 
 # ════════════════════════════════════════════════════════════
-with tabs[2]:
+with tabs[1]:
     st.subheader("🕸️ Crawl Site")
     url=st.text_input("Start URL",placeholder="https://example.com",key="crawl_url")
     if url.strip(): show_platform_badge(url)
@@ -385,7 +333,7 @@ with tabs[2]:
 # ════════════════════════════════════════════════════════════
 # TAB 4 — BULK SCRAPE
 # ════════════════════════════════════════════════════════════
-with tabs[3]:
+with tabs[2]:
     st.subheader("📋 Bulk Scrape")
     urls_raw=st.text_area("URLs (one per line)",placeholder="https://example.com/1\nhttps://example.com/2",height=130)
     first_url=next((u.strip() for u in urls_raw.splitlines() if u.strip()),None)
@@ -421,7 +369,7 @@ with tabs[3]:
 # ════════════════════════════════════════════════════════════
 # TAB 5 — TWITTER / X
 # ════════════════════════════════════════════════════════════
-with tabs[4]:
+with tabs[3]:
     st.subheader("🐦 Twitter / X Scraper")
     st.markdown('<div class="tip-box">A real browser window will open. If you\'re already logged in to Twitter in Chrome, the session will be reused automatically after the first run.</div>', unsafe_allow_html=True)
 
@@ -461,7 +409,7 @@ with tabs[4]:
 # ════════════════════════════════════════════════════════════
 # TAB 6 — LINKEDIN
 # ════════════════════════════════════════════════════════════
-with tabs[5]:
+with tabs[4]:
     st.subheader("💼 LinkedIn Scraper")
     st.markdown('<div class="tip-box">⚠️ LinkedIn actively monitors for scraping. Use slow delays, a dummy account, and don\'t scrape thousands of profiles at once. The browser will open so you can log in on first use.</div>', unsafe_allow_html=True)
 
@@ -532,7 +480,7 @@ with tabs[5]:
 # ════════════════════════════════════════════════════════════
 # TAB 7 — AMAZON
 # ════════════════════════════════════════════════════════════
-with tabs[6]:
+with tabs[5]:
     st.subheader("📦 Amazon Reviews")
     st.caption("Paste any Amazon product page URL — the scraper handles pagination automatically.")
     az_url  = st.text_input("Amazon product URL", placeholder="https://www.amazon.com/dp/B08N5WRWNW")
@@ -565,7 +513,7 @@ with tabs[6]:
 # ════════════════════════════════════════════════════════════
 # TAB 8 — YOUTUBE
 # ════════════════════════════════════════════════════════════
-with tabs[7]:
+with tabs[6]:
     st.subheader("▶️ YouTube Scraper")
 
     yt_mode = st.radio("What to scrape", ["Search videos", "Channel videos", "Video details", "Video comments"], horizontal=True)
@@ -646,7 +594,7 @@ with tabs[7]:
 # ════════════════════════════════════════════════════════════
 # TAB 9 — G2 REVIEWS
 # ════════════════════════════════════════════════════════════
-with tabs[8]:
+with tabs[7]:
     st.subheader("🟡 G2 Reviews")
 
     st.markdown(
