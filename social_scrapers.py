@@ -805,19 +805,11 @@ def scrape_g2_with_real_chrome(
                 print("[G2] ⚠️  Still getting blocked — make sure you're logged in to G2 in Chrome and Chrome was fully closed before running.")
                 break
 
-            # Try multiple card selectors — G2 updates their layout often
-            cards = (
-                page.query_selector_all("div[id^='review-']") or
-                page.query_selector_all("div.paper.paper--white.paper--box") or
-                page.query_selector_all("[itemprop='review']") or
-                page.query_selector_all("div.review-card") or
-                page.query_selector_all("div[class*='review-card']")
-            )
+            # G2 uses <article itemprop="review"> for each review card
+            cards = page.query_selector_all("article[itemprop='review']")
             if not cards:
-                # Last resort: dump full page text into one result
                 body = page.inner_text("body")
-                print(f"[G2] Could not find review cards. Page text preview: {body[:300]}")
-                print(f"[G2] No reviews found on page {pg}, stopping.")
+                print(f"[G2] Could not find review cards. Page preview: {body[:300]}")
                 break
 
             for card in cards:
@@ -828,39 +820,46 @@ def scrape_g2_with_real_chrome(
 
                     # Reviewer name
                     name = (
-                        _t("span.fw-semibold.link-color-blue") or
-                        _t("a[href*='/users/']") or
-                        _t("[itemprop='author'] span") or
-                        _t(".m-0 span") or
+                        _t("[itemprop='author'] [itemprop='name']") or
+                        _t("[itemprop='author']") or
+                        _t("div[itemprop='name']") or
                         "Anonymous"
                     )
 
-                    # Role
-                    role = _t("div.mt-4th") or _t(".text-small.color-mid") or ""
+                    # Role / company size
+                    role = (
+                        _t("[class*='elv-text-sm']") or
+                        _t("div.mt-4th") or
+                        ""
+                    )
 
-                    # Rating — try data attribute first, then text
-                    rating_el = card.query_selector("[data-rating]")
-                    if rating_el:
-                        rating = rating_el.get_attribute("data-rating") or rating_el.inner_text().strip()
-                    else:
-                        rating = _t("span.fw-semibold") or _t(".stars-container span") or ""
+                    # Star rating
+                    rating_el = card.query_selector("[itemprop='reviewRating'] [itemprop='ratingValue']")
+                    if not rating_el:
+                        rating_el = card.query_selector("[itemprop='ratingValue']")
+                    rating = rating_el.get_attribute("content") or rating_el.inner_text().strip() if rating_el else ""
 
-                    # Title
-                    title = _t("h3") or _t(".review-title") or _t("a.pjax") or ""
+                    # Review title — the bold heading inside itemprop="name"
+                    title_el = card.query_selector("[itemprop='name'] div")
+                    title = title_el.inner_text().strip() if title_el else _t("h3")
 
-                    # Pros and cons — try specific selectors then fall back to all paragraphs
-                    pros = _t("div[data-test='pros'] p") or _t(".pros p") or ""
-                    cons = _t("div[data-test='cons'] p") or _t(".cons p") or ""
-                    if not pros or not cons:
-                        all_ans = card.query_selector_all(".review-answer p, [itemprop='reviewBody'] p, div.formatted-text p")
-                        if all_ans and not pros:
-                            pros = all_ans[0].inner_text().strip() if len(all_ans) > 0 else ""
-                        if all_ans and not cons:
-                            cons = all_ans[1].inner_text().strip() if len(all_ans) > 1 else ""
+                    # Pros — "What do you like best"
+                    # G2 puts Q&A in divs with data-poison containing survey info
+                    all_paras = card.query_selector_all("div[class*='elv-'] p, div[class*='formatted'] p")
+                    pros = all_paras[0].inner_text().strip() if len(all_paras) > 0 else ""
+                    cons = all_paras[1].inner_text().strip() if len(all_paras) > 1 else ""
 
                     # Date
                     date_el = card.query_selector("time")
-                    date = (date_el.get_attribute("datetime") or date_el.inner_text().strip()) if date_el else ""
+                    date = date_el.get_attribute("datetime") or date_el.inner_text().strip() if date_el else ""
+                    if not date:
+                        # Try data-poison attribute which has published_date
+                        import json as _json
+                        try:
+                            dp = card.get_attribute("data-track-in-viewport-options") or "{}"
+                            date = _json.loads(dp).get("published_date", "")
+                        except Exception:
+                            pass
 
                     if name or title or pros:
                         results.append({
