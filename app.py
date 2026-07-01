@@ -220,7 +220,7 @@ with tabs[0]:
                                 try: br.append(sc2.extract_structured(u,sels))
                                 except Exception as e: br.append({"url":u,"error":str(e)})
                             pb.progress(1.0,text="Done!")
-                            st.dataframe(br,use_container_width=True)
+                            st.dataframe(br,width="stretch")
                             dl_buttons(br,"links_scraped")
                         st.markdown('</div>',unsafe_allow_html=True)
 
@@ -303,7 +303,7 @@ with tabs[2]:
                 except Exception as e: log.append(f"  ⚠ {e}")
             pb.progress(1.0,text="Done!")
             st.success(f"Visited {len(results)} pages.")
-            st.dataframe(results,use_container_width=True); dl_buttons(results,"crawl")
+            st.dataframe(results,width="stretch"); dl_buttons(results,"crawl")
 
 # ════════════════════════════════════════════════════════════
 # TAB 4 — BULK SCRAPE
@@ -339,7 +339,7 @@ with tabs[3]:
                 except Exception as e: results.append({"url":u,"error":str(e),**{k:None for k in sels}})
             pb.progress(1.0,text="Done!")
             st.success(f"Scraped {len(results)} pages.")
-            st.dataframe(results,use_container_width=True); dl_buttons(results,"bulk")
+            st.dataframe(results,width="stretch"); dl_buttons(results,"bulk")
 
 # ════════════════════════════════════════════════════════════
 # TAB 5 — TWITTER / X
@@ -375,7 +375,7 @@ with tabs[4]:
                         headless=headless_mode,
                     )
                     st.success(f"Collected {len(results)} tweets!")
-                    st.dataframe(results, use_container_width=True)
+                    st.dataframe(results, width="stretch")
                     dl_buttons(results, "twitter_results")
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -417,11 +417,11 @@ with tabs[5]:
                         st.json(data["overview"])
                         if data["people"]:
                             st.markdown(f"**Employees ({len(data['people'])})**")
-                            st.dataframe(data["people"], use_container_width=True)
+                            st.dataframe(data["people"], width="stretch")
                             dl_buttons(data["people"], "linkedin_people")
                         if data["posts"]:
                             st.markdown(f"**Posts ({len(data['posts'])})**")
-                            st.dataframe(data["posts"], use_container_width=True)
+                            st.dataframe(data["posts"], width="stretch")
                             dl_buttons(data["posts"], "linkedin_posts")
                         st.download_button("⬇️ Full JSON", json.dumps(data,indent=2), "linkedin_company.json","application/json")
                     except Exception as e:
@@ -470,7 +470,7 @@ with tabs[6]:
                         mc1.metric("Total reviews", len(results))
                         mc2.metric("Verified purchases", verified)
                         mc3.metric("Most common rating", max(set(ratings),key=ratings.count) if ratings else "—")
-                    st.dataframe(results, use_container_width=True)
+                    st.dataframe(results, width="stretch")
                     dl_buttons(results, "amazon_reviews")
                 except ValueError as e: st.error(str(e))
                 except Exception as e: st.error(f"Error: {e}")
@@ -496,7 +496,7 @@ with tabs[7]:
                         from social_scrapers import scrape_youtube_comments
                         results = scrape_youtube_comments(yt_url.strip(), max_comments=yt_max, headless=headless_mode)
                         st.success(f"Collected {len(results)} comments!")
-                        st.dataframe(results, use_container_width=True)
+                        st.dataframe(results, width="stretch")
                         dl_buttons(results, "youtube_comments")
                     except Exception as e: st.error(f"Error: {e}")
     else:
@@ -515,7 +515,7 @@ with tabs[7]:
                             from social_scrapers import scrape_youtube_api
                             results = scrape_youtube_api(yt_query.strip(), mode="search", api_key=yt_api_key, max_results=yt_max)
                             st.success(f"Found {len(results)} videos!")
-                            st.dataframe(results, use_container_width=True)
+                            st.dataframe(results, width="stretch")
                             dl_buttons(results, "youtube_search")
                         except Exception as e: st.error(f"Error: {e}")
 
@@ -533,7 +533,7 @@ with tabs[7]:
                             from social_scrapers import scrape_youtube_api
                             results = scrape_youtube_api(yt_channel.strip(), mode="channel", api_key=yt_api_key, max_results=yt_max)
                             st.success(f"Found {len(results)} videos!")
-                            st.dataframe(results, use_container_width=True)
+                            st.dataframe(results, width="stretch")
                             dl_buttons(results, "youtube_channel")
                         except Exception as e: st.error(f"Error: {e}")
 
@@ -561,58 +561,26 @@ with tabs[7]:
 # ════════════════════════════════════════════════════════════
 with tabs[8]:
     st.subheader("🟡 G2 Reviews")
-    st.caption("Scrapes reviews from your company's G2 page using undetected-chromedriver.")
 
     st.markdown(
         '<div class="tip-box">'
-        '🛡️ <b>How it works</b><br>'
-        'A Chrome window will open. <b>You navigate to the G2 reviews page yourself</b> — '
-        'the scraper detects when you\'re there and automatically extracts all the reviews.<br><br>'
-        'Because <i>you</i> do the navigation (not the bot), G2 can\'t block it.<br><br>'
-        '📦 <b>One-time setup (if you haven\'t already):</b> open PowerShell and run:<br>'
-        '<code>pip install undetected-chromedriver selenium</code>'
+        '<b>How to use:</b><br>'
+        '1. Set the number of pages below, then click <b>▶ Scrape G2 Reviews</b><br>'
+        '2. A Chrome window will open — paste your G2 URL in the address bar and press Enter<br>'
+        '3. Once you can see reviews on screen, the scraper detects this and extracts everything automatically'
         '</div>',
         unsafe_allow_html=True
     )
 
-    g2_url   = st.text_input("G2 product URL", placeholder="https://www.g2.com/products/your-product/reviews")
     g2_pages = st.slider("Pages to scrape (up to ~10 reviews per page)", 1, 20, 5)
 
-    with st.expander("🛠️ Advanced: fix G2 blocking"):
-        st.markdown("""
-**Why is G2 blocking?** It's detecting the browser as a bot via fingerprint — not just IP.
-
-**Best fix — use your real Chrome profile:**
-G2 can't distinguish your real Chrome (with all your history, cookies & extensions) from a normal visit.
-> ⚠️ You must **close ALL Chrome windows** before clicking Scrape, then Chrome will reopen automatically.
-        """)
-        g2_real_profile = st.checkbox(
-            "✅ Use my real Chrome profile (close ALL Chrome windows first!)",
-            value=False,
-            key="g2_real_profile"
-        )
-        st.markdown("---")
-        st.markdown("**Alternative: use a proxy**")
-        st.code("http://host:port   or   socks5://host:port", language=None)
-        g2_proxy = st.text_input("Proxy (optional)", placeholder="http://123.45.67.89:8080", label_visibility="visible")
-
     if st.button("▶  Scrape G2 Reviews", key="g2_go"):
-        if not g2_url.strip():
-            st.error("Enter a G2 product URL.")
-        elif "g2.com" not in g2_url:
-            st.error("That doesn't look like a G2 URL — make sure it starts with https://www.g2.com/products/...")
-        else:
-            proxy_val = g2_proxy.strip() if g2_proxy.strip() else None
-            spinner_msg = "Opening Chrome via proxy… " if proxy_val else "Opening Chrome… "
-            with st.spinner(spinner_msg + "navigate to your G2 reviews page in the browser, then extraction starts automatically."):
+        with st.spinner("Chrome is open — paste your G2 URL in the browser and navigate to the reviews page. Extraction starts automatically once reviews are visible."):
                 try:
                     import sys, os; sys.path.insert(0, os.path.dirname(__file__))
                     from social_scrapers import scrape_g2_undetected
                     results = scrape_g2_undetected(
-                        g2_url=g2_url.strip(),
                         max_pages=g2_pages,
-                        proxy=proxy_val,
-                        use_real_profile=g2_real_profile,
                     )
                     if not results:
                         st.warning(
@@ -627,7 +595,7 @@ G2 can't distinguish your real Chrome (with all your history, cookies & extensio
                         mc1, mc2 = st.columns(2)
                         mc1.metric("Total reviews scraped", len(results))
                         mc2.metric("Most common rating", max(set(ratings), key=ratings.count) if ratings else "—")
-                        st.dataframe(results, use_container_width=True)
+                        st.dataframe(results, width="stretch")
                         dl_buttons(results, "g2_reviews")
 
                 except ImportError as e:

@@ -533,7 +533,7 @@ def scrape_g2_reviews(
     results = []
 
     # Normalise URL to reviews page
-    if "/reviews" not in g2_url:
+    if g2_url and "/reviews" not in g2_url:
         g2_url = g2_url.rstrip("/") + "/reviews"
 
     with sync_playwright() as p:
@@ -891,7 +891,7 @@ def scrape_g2_with_real_chrome(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def scrape_g2_undetected(
-    g2_url: str,
+    g2_url: str = "",
     max_pages: int = 5,
     profile_dir: str = "g2_uc_profile",
     proxy: str = None,
@@ -1006,7 +1006,7 @@ def scrape_g2_undetected(
             time.sleep(5)
             try:
                 current = driver.current_url
-                if "g2.com/products" in current and "review" in current.lower():
+                if "g2.com/products" in current and ("review" in current.lower() or "#" in current):
                     print(f"[G2-UC] ✓ Detected reviews page: {current}")
                     print("[G2-UC] Starting data extraction…")
                     time.sleep(2)
@@ -1017,12 +1017,19 @@ def scrape_g2_undetected(
             print("[G2-UC] Timed out waiting for navigation. Attempting anyway…")
 
         # ── Scrape pages ─────────────────────────────────────────────────────
+        # Use the URL the user actually navigated to
+        actual_url = driver.current_url.split("?")[0].split("#")[0]
+        if not g2_url:
+            g2_url = actual_url
+        if "/reviews" not in g2_url:
+            g2_url = g2_url.rstrip("/") + "/reviews"
+
         blocked = False
+        cards_on_page = 0
         for pg in range(1, max_pages + 1):
             if pg > 1:
-                # For pages after the first, navigate automatically
-                url = g2_url if pg == 1 else f"{g2_url}?page={pg}"
-                print(f"[G2-UC] Navigating to page {pg}/{max_pages}…")
+                url = f"{g2_url}?page={pg}"
+                print(f"[G2-UC] Navigating to page {pg}/{max_pages}: {url}")
                 driver.get(url)
                 time.sleep(random.uniform(4, 7))
             else:
@@ -1052,12 +1059,13 @@ def scrape_g2_undetected(
 
             # Parse review cards
             cards = driver.find_elements(By.CSS_SELECTOR, "article[itemprop='review']")
+            cards_on_page = len(cards)
             if not cards:
                 print(f"[G2-UC] No review cards found on page {pg}. Stopping.")
                 print(f"[G2-UC] Page preview: {body_text[:300]}")
                 break
 
-            print(f"[G2-UC] Found {len(cards)} review cards on page {pg}.")
+            print(f"[G2-UC] Found {cards_on_page} review cards on page {pg}.")
 
             for card in cards:
                 try:
@@ -1122,21 +1130,13 @@ def scrape_g2_undetected(
                 except Exception:
                     pass
 
-            # Random inter-page delay (30–90 s) — mimics a human reading reviews
-            if pg < max_pages:
-                wait = random.uniform(30, 90)
-                print(f"[G2-UC] Waiting {wait:.0f}s before next page (human pacing)…")
-                time.sleep(wait)
-
-            # Next page button check
-            try:
-                driver.find_element(By.CSS_SELECTOR,
-                    "a[data-next-page], li.next a, a[aria-label='Next page'], "
-                    ".pagination-next a, a[rel='next']")
-            except Exception:
-                if pg < max_pages:
-                    print(f"[G2-UC] No next-page button found after page {pg}, stopping.")
+            if not cards_on_page:
+                print(f"[G2-UC] No reviews found on page {pg}, stopping.")
                 break
+
+            # Short delay between pages
+            if pg < max_pages:
+                time.sleep(random.uniform(3, 6))
 
     finally:
         try:
