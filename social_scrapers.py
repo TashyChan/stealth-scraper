@@ -914,7 +914,7 @@ def scrape_g2_undetected(
         import sys, subprocess
         print("[G2-UC] undetected-chromedriver not found — installing now...")
         subprocess.check_call([sys.executable, "-m", "pip", "install",
-                               "undetected-chromedriver", "selenium"])
+                               "setuptools", "undetected-chromedriver", "selenium"])
         import undetected_chromedriver as uc
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
